@@ -12,6 +12,8 @@ const MAP = {
   // variance
   OK: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
   SURPLUS: "bg-sky-500/10 text-sky-400 border-sky-500/30",
+  WIP: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+  KOSONG: "bg-slate-500/10 text-slate-400 border-slate-500/30",
   // lamp
   SELESAI: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
   PROSES: "bg-amber-500/10 text-amber-400 border-amber-500/30",
@@ -21,6 +23,7 @@ const MAP = {
 const DOT = {
   AMAN: "bg-emerald-400", CUKUP: "bg-emerald-400", OK: "bg-emerald-400", SELESAI: "bg-emerald-400",
   REORDER: "bg-amber-400 pulse-dot", PAS: "bg-sky-400", PROSES: "bg-amber-400 pulse-dot", SURPLUS: "bg-sky-400",
+  WIP: "bg-amber-400", KOSONG: "bg-slate-400",
   CRITICAL: "bg-red-400 pulse-dot", SHORTAGE: "bg-red-400 pulse-dot", "BELUM MULAI": "bg-slate-400",
 };
 

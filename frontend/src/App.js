@@ -12,6 +12,7 @@ import ProductionNeeds from "@/pages/ProductionNeeds";
 import Variance from "@/pages/Variance";
 import Users from "@/pages/Users";
 import { Loader2 } from "lucide-react";
+import { canRead } from "@/lib/api";
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -22,6 +23,17 @@ function Protected({ children }) {
       </div>
     );
   if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
+
+function Guard({ module, children }) {
+  const { user } = useAuth();
+  if (!canRead(user, module))
+    return (
+      <div className="py-24 text-center text-muted-foreground" data-testid="no-access">
+        Anda tidak memiliki akses ke modul ini.
+      </div>
+    );
   return children;
 }
 
@@ -41,12 +53,12 @@ function App() {
               }
             >
               <Route index element={<Dashboard />} />
-              <Route path="smt-production" element={<SMTProduction />} />
-              <Route path="lamp-production" element={<LampProduction />} />
-              <Route path="smt-stock" element={<SMTStock />} />
-              <Route path="production-needs" element={<ProductionNeeds />} />
-              <Route path="variance" element={<Variance />} />
-              <Route path="users" element={<Users />} />
+              <Route path="smt-production" element={<Guard module="smt_production"><SMTProduction /></Guard>} />
+              <Route path="lamp-production" element={<Guard module="lamp_production"><LampProduction /></Guard>} />
+              <Route path="smt-stock" element={<Guard module="smt_stock"><SMTStock /></Guard>} />
+              <Route path="production-needs" element={<Guard module="production_needs"><ProductionNeeds /></Guard>} />
+              <Route path="variance" element={<Guard module="variance"><Variance /></Guard>} />
+              <Route path="users" element={<Guard module="users"><Users /></Guard>} />
             </Route>
           </Routes>
         </BrowserRouter>

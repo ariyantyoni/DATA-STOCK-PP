@@ -6,7 +6,16 @@ Aplikasi web profesional untuk Control Data Stock & Production di perusahaan man
 ## Architecture
 - Backend: FastAPI + MongoDB (motor), JWT auth (Bearer token in localStorage + httpOnly cookie), all routes /api prefixed.
 - Frontend: React 19 + React Router + Tailwind + shadcn/ui + Recharts. Generic CrudPage drives 5 data modules.
-- Auto-calculations server-side; role-based write permissions (WRITE_ROLES).
+- Auto-calculations server-side; per-user module permissions (none/read/write) with role defaults (ROLE_DEFAULT_PERMS) + admin override (users.permissions).
+- Data schema mirrors company Excel "DATA STOCK.xlsx" (columns A–AC), one row per Tanggal + ICS No. per module.
+
+## Data Model (sesuai Excel, since 2026-09)
+- smt_production: lane,type,ics_no,tt,led_rank,smt1..3 → cap_h=3600/tt, total
+- lamp_production: plan_assy, assy1..3, stock_ok_prev → total, blc=stock_ok_prev−plan_assy, achievement, status
+- smt_stock: stock_ok_prev, coating, belum_cutting, belum_ict, belum_fct, ok, tray → total, wip, status OK/WIP/KOSONG
+- production_needs: plan_assy, stock_ok_prev → blc, fulfillment, status CUKUP/PAS/SHORTAGE
+- variance: total_stock_prev, smt_total, assy_total, smt3, assy3, actual_total_stock → stok_jam=actual−smt3+assy3, stock_sistem=prev+smt−assy, variance=actual−sistem, variance_status
+- Seed: /app/backend/seed/data_stock.json (141 items), guarded by db.meta seed version.
 
 ## User Personas / Roles
 - admin (owner: ariyantyoni@gmail.com) — full access + Manajemen User
@@ -27,9 +36,16 @@ Aplikasi web profesional untuk Control Data Stock & Production di perusahaan man
 - Excel/CSV import with preview + confirm. Manajemen User (admin).
 - Tested: 26/26 backend pytest + full frontend playwright, 100% pass.
 
+## Implemented (2026-09) — Excel alignment + User Management
+- All 5 modules refactored to Excel columns/formulas above; filters by tanggal/lane/type/ICS No./status.
+- Dashboard rebuilt: SMT total, Assy plan vs actual, shortage (BLC<0), variance, stock OK/total/WIP, stock composition pie, SMT per lane per shift, top shortage/variance.
+- Import: downloadable Excel template per modul (1 header row, label Indonesia), preview shows invalid/unknown columns, confirm upserts by (date, ics_no).
+- Manajemen User: tambah/edit/hapus, reset password, role, matrix hak akses per modul (Tidak ada/Lihat/Ubah) dengan override; nav & routes guarded; backend require_perm.
+- Tested: 23/23 backend pytest + Playwright e2e (iteration_2), 100% pass.
+
 ## Backlog / Remaining
-- P1: Adapt data model to user's real Excel report format (awaiting file upload).
-- P2: Brute-force login lockout, password reset UI, per-plant filter, PDF/Excel export, split server.py into routers.
+- P1: Auto-isi nilai "kemarin" (stock_ok_prev, total_stock_prev) dari laporan tanggal sebelumnya; master item (lane/type/ICS/T/T) untuk autocomplete form.
+- P2: Export Excel dengan layout asli DATA STOCK; brute-force lockout; password reset; split server.py.
 
 ## Next Tasks
-- Incorporate uploaded Excel structure & formulas when provided.
+- Verifikasi user terhadap data hasil seed dari DATA STOCK.xlsx.

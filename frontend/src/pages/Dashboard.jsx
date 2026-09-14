@@ -5,13 +5,12 @@ import {
   Tooltip, PieChart, Pie, Cell, Legend,
 } from "recharts";
 import { Input } from "@/components/ui/input";
-import { StatusBadge } from "@/components/StatusBadge";
 import {
-  Cpu, Lightbulb, AlertTriangle, Scale, Target, TrendingUp, Loader2, Boxes, Gauge,
+  Cpu, Lightbulb, AlertTriangle, Scale, TrendingUp, Loader2, Boxes, Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const STOCK_COLORS = { AMAN: "#10b981", REORDER: "#f59e0b", CRITICAL: "#ef4444" };
+const STOCK_COLORS = ["#10b981", "#f59e0b", "#38bdf8", "#a78bfa", "#f97316"];
 
 function TooltipBox({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -42,6 +41,18 @@ function KpiCard({ icon: Icon, label, value, sub, accent, testId }) {
   );
 }
 
+function Panel({ icon: Icon, title, tone = "text-primary", children, className }) {
+  return (
+    <div className={cn("rounded-lg border border-border bg-card/60 p-5", className)}>
+      <div className="flex items-center gap-2 mb-4">
+        <Icon className={cn("w-4 h-4", tone)} />
+        <h3 className="font-heading font-semibold">{title}</h3>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -66,13 +77,14 @@ export default function Dashboard() {
     return <div className="flex items-center justify-center py-32"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
   const k = data.kpi;
+  const axis = { fill: "#64748b", fontSize: 11 };
 
   return (
     <div className="space-y-6 fade-up">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight">Dashboard Kontrol Produksi</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Ringkasan produksi SMT, LAMP ASSY, stok, dan variance</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Ringkasan produksi SMT & ASSY, stock SMT, kebutuhan (BLC), dan variance</p>
         </div>
         <div className="flex items-end gap-2">
           <div className="flex flex-col gap-1">
@@ -87,114 +99,116 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <KpiCard testId="kpi-smt" icon={Cpu} label="Output SMT (Actual)" value={fmtNum(k.smt_actual)}
-          sub={`Target ${fmtNum(k.smt_target)} · Achv ${fmtPct(k.smt_achievement)}`}
-          accent={k.smt_achievement >= 100 ? "text-emerald-400" : "text-amber-400"} />
-        <KpiCard testId="kpi-lamp" icon={Lightbulb} label="Output LAMP ASSY" value={fmtNum(k.lamp_actual)}
-          sub={`Target ${fmtNum(k.lamp_target)} · Achv ${fmtPct(k.lamp_achievement)}`}
-          accent="text-orange-400" />
-        <KpiCard testId="kpi-shortage" icon={AlertTriangle} label="Item Shortage" value={fmtNum(k.shortage_count)}
-          sub="Part kurang dari kebutuhan" accent={k.shortage_count > 0 ? "text-red-400" : "text-emerald-400"} />
+        <KpiCard testId="kpi-smt" icon={Cpu} label="Hasil Produksi SMT" value={fmtNum(k.smt_total)}
+          sub={`${fmtNum(k.smt_items)} item · total 3 shift`} accent="text-cyan-400" />
+        <KpiCard testId="kpi-assy" icon={Lightbulb} label="Actual Produksi ASSY" value={fmtNum(k.assy_total)}
+          sub={`Plan ${fmtNum(k.plan_assy)} · Achv ${fmtPct(k.assy_achievement)}`}
+          accent={k.assy_achievement >= 100 ? "text-emerald-400" : "text-orange-400"} />
+        <KpiCard testId="kpi-shortage" icon={AlertTriangle} label="Item Shortage (BLC < 0)" value={fmtNum(k.shortage_count)}
+          sub={`dari ${fmtNum(k.needs_items)} item kebutuhan`} accent={k.shortage_count > 0 ? "text-red-400" : "text-emerald-400"} />
         <KpiCard testId="kpi-variance" icon={Scale} label="Item Variance" value={fmtNum(k.variance_count)}
-          sub={`Akurasi stok ${fmtPct(k.stock_accuracy)}`} accent={k.variance_count > 0 ? "text-amber-400" : "text-emerald-400"} />
+          sub={`Total selisih ${k.variance_sum > 0 ? "+" : ""}${fmtNum(k.variance_sum)} pcs`} accent={k.variance_count > 0 ? "text-amber-400" : "text-emerald-400"} />
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <KpiCard testId="kpi-yield" icon={Gauge} label="SMT Yield" value={fmtPct(k.smt_yield)} accent="text-cyan-400" />
-        <KpiCard testId="kpi-defect" icon={AlertTriangle} label="Total Defect" value={fmtNum(k.smt_defect)} accent="text-red-400" />
-        <KpiCard testId="kpi-stock-total" icon={Boxes} label="Total Item Stock" value={fmtNum(k.stock_total)} accent="text-primary" />
-        <KpiCard testId="kpi-achv" icon={Target} label="SMT Achievement" value={fmtPct(k.smt_achievement)}
-          accent={k.smt_achievement >= 100 ? "text-emerald-400" : "text-amber-400"} />
+        <KpiCard testId="kpi-stock-ok" icon={Boxes} label="Stock OK SMT" value={fmtNum(k.stock_ok)} sub={k.stock_date ? `per ${k.stock_date}` : ""} accent="text-emerald-400" />
+        <KpiCard testId="kpi-stock-total" icon={Layers} label="Total Stock SMT" value={fmtNum(k.stock_total)} sub={`${fmtNum(k.stock_items)} item`} accent="text-primary" />
+        <KpiCard testId="kpi-stock-wip" icon={Layers} label="Stock WIP (belum OK)" value={fmtNum(k.stock_total - k.stock_ok)} accent="text-amber-400" />
+        <KpiCard testId="kpi-plan" icon={Lightbulb} label="Plan Assy" value={fmtNum(k.plan_assy)} accent="text-orange-400" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 rounded-lg border border-border bg-card/60 p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <TrendingUp className="w-4 h-4 text-primary" />
-            <h3 className="font-heading font-semibold">Trend Produksi SMT (Target vs Actual)</h3>
-          </div>
+        <Panel icon={TrendingUp} title="Trend Produksi ASSY (Plan vs Actual)" className="lg:col-span-2">
           <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={data.smt_trend}>
+            <AreaChart data={data.assy_trend}>
               <defs>
                 <linearGradient id="gActual" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#38bdf8" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#f97316" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 11 }} tickFormatter={(d) => d?.slice(5)} />
-              <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
+              <XAxis dataKey="date" tick={axis} tickFormatter={(d) => d?.slice(5)} />
+              <YAxis tick={axis} />
               <Tooltip content={<TooltipBox />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Area type="monotone" dataKey="actual" name="Actual" stroke="#38bdf8" fill="url(#gActual)" strokeWidth={2} />
-              <Area type="monotone" dataKey="target" name="Target" stroke="#f59e0b" fill="none" strokeWidth={2} strokeDasharray="4 4" />
+              <Area type="monotone" dataKey="actual" name="Actual Assy" stroke="#f97316" fill="url(#gActual)" strokeWidth={2} />
+              <Area type="monotone" dataKey="plan" name="Plan Assy" stroke="#f59e0b" fill="none" strokeWidth={2} strokeDasharray="4 4" />
             </AreaChart>
           </ResponsiveContainer>
-        </div>
+        </Panel>
 
-        <div className="rounded-lg border border-border bg-card/60 p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Boxes className="w-4 h-4 text-primary" />
-            <h3 className="font-heading font-semibold">Status Stock SMT</h3>
-          </div>
+        <Panel icon={Boxes} title="Komposisi Stock SMT">
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
-              <Pie data={data.stock_status} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3}>
-                {data.stock_status.map((s) => <Cell key={s.name} fill={STOCK_COLORS[s.name]} />)}
+              <Pie data={data.stock_breakdown} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3}>
+                {data.stock_breakdown.map((s, i) => <Cell key={s.name} fill={STOCK_COLORS[i]} />)}
               </Pie>
               <Tooltip content={<TooltipBox />} />
             </PieChart>
           </ResponsiveContainer>
-          <div className="space-y-2 mt-2">
-            {data.stock_status.map((s) => (
+          <div className="space-y-1.5 mt-2">
+            {data.stock_breakdown.map((s, i) => (
               <div key={s.name} className="flex items-center justify-between text-sm">
-                <StatusBadge status={s.name} />
-                <span className="font-mono-data">{fmtNum(s.value)} item</span>
+                <span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-full" style={{ background: STOCK_COLORS[i] }} />{s.name}</span>
+                <span className="font-mono-data">{fmtNum(s.value)}</span>
               </div>
             ))}
           </div>
-        </div>
+        </Panel>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 rounded-lg border border-border bg-card/60 p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Lightbulb className="w-4 h-4 text-orange-400" />
-            <h3 className="font-heading font-semibold">Trend Produksi LAMP ASSY</h3>
-          </div>
+        <Panel icon={Cpu} title="Hasil SMT per Lane (per Shift)" tone="text-cyan-400" className="lg:col-span-2">
           <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={data.lamp_trend}>
+            <BarChart data={data.smt_by_lane}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 11 }} tickFormatter={(d) => d?.slice(5)} />
-              <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
+              <XAxis dataKey="lane" tick={axis} />
+              <YAxis tick={axis} />
               <Tooltip content={<TooltipBox />} cursor={{ fill: "#1e293b40" }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="target" name="Target" fill="#334155" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="actual" name="Actual" fill="#f97316" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="smt1" name="Shift 1" stackId="a" fill="#38bdf8" />
+              <Bar dataKey="smt2" name="Shift 2" stackId="a" fill="#0ea5e9" />
+              <Bar dataKey="smt3" name="Shift 3" stackId="a" fill="#0369a1" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
-        </div>
+        </Panel>
 
-        <div className="rounded-lg border border-border bg-card/60 p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <AlertTriangle className="w-4 h-4 text-red-400" />
-            <h3 className="font-heading font-semibold">Top Item Shortage</h3>
-          </div>
-          {data.top_shortage.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-8 text-center">Tidak ada item shortage 🎯</p>
-          ) : (
-            <div className="space-y-3">
-              {data.top_shortage.map((n) => (
-                <div key={n.id} className="flex items-center justify-between border-b border-border/50 pb-2">
-                  <div>
-                    <p className="font-mono-data text-sm text-foreground">{n.part_number}</p>
-                    <p className="text-xs text-muted-foreground">Butuh {fmtNum(n.required_qty)} · Stock {fmtNum(n.stock_actual)}</p>
+        <div className="space-y-4">
+          <Panel icon={AlertTriangle} title="Top Shortage (BLC)" tone="text-red-400">
+            {data.top_shortage.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">Tidak ada item shortage</p>
+            ) : (
+              <div className="space-y-2">
+                {data.top_shortage.map((n) => (
+                  <div key={n.id} className="flex items-center justify-between border-b border-border/50 pb-1.5">
+                    <div>
+                      <p className="text-sm text-foreground">{n.type}</p>
+                      <p className="text-[11px] font-mono-data text-muted-foreground">{n.ics_no} · Plan {fmtNum(n.plan_assy)} · Stock {fmtNum(n.stock_ok_prev)}</p>
+                    </div>
+                    <span className="font-mono-data text-sm text-red-400">{fmtNum(n.blc)}</span>
                   </div>
-                  <span className="font-mono-data text-sm text-red-400">-{fmtNum(n.shortage_qty)}</span>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </Panel>
+          <Panel icon={Scale} title="Top Variance" tone="text-amber-400">
+            {data.top_variance.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">Tidak ada variance</p>
+            ) : (
+              <div className="space-y-2">
+                {data.top_variance.map((v) => (
+                  <div key={v.id} className="flex items-center justify-between border-b border-border/50 pb-1.5">
+                    <div>
+                      <p className="text-sm text-foreground">{v.type}</p>
+                      <p className="text-[11px] font-mono-data text-muted-foreground">{v.ics_no} · Sistem {fmtNum(v.stock_sistem)} · Actual {fmtNum(v.actual_total_stock)}</p>
+                    </div>
+                    <span className={cn("font-mono-data text-sm", v.variance < 0 ? "text-red-400" : "text-emerald-400")}>{v.variance > 0 ? "+" : ""}{fmtNum(v.variance)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Panel>
         </div>
       </div>
     </div>

@@ -49,8 +49,9 @@ export default function FilterBar({ filters, values, setValues, options }) {
       {filters.includes("lamp_line") && <FSelect label="Line" value={values.lane} onChange={(v) => set("lane", v)} options={options.lamp_lines || []} testId="filter-lamp-line" />}
       {filters.includes("shift") && <FSelect label="Shift" value={values.shift} onChange={(v) => set("shift", v)} options={options.shifts || []} testId="filter-shift" />}
       {filters.includes("type") && <FSelect label="Type / Model" value={values.type} onChange={(v) => set("type", v)} options={options.types || []} testId="filter-type" />}
-      {filters.includes("part_number") && <FSelect label="Part Number" value={values.part_number} onChange={(v) => set("part_number", v)} options={options.part_numbers || []} testId="filter-part-number" />}
+      {filters.includes("ics_no") && <FSelect label="ICS No." value={values.ics_no} onChange={(v) => set("ics_no", v)} options={options.ics_nos || []} testId="filter-ics-no" />}
       {filters.includes("stock_status") && <FSelect label="Status Stock" value={values.status} onChange={(v) => set("status", v)} options={options.stock_status || []} testId="filter-status" />}
+      {filters.includes("lamp_status") && <FSelect label="Status" value={values.status} onChange={(v) => set("status", v)} options={options.lamp_status || []} testId="filter-status" />}
       {filters.includes("needs_status") && <FSelect label="Status" value={values.status} onChange={(v) => set("status", v)} options={options.needs_status || []} testId="filter-status" />}
       {filters.includes("variance_status") && <FSelect label="Status" value={values.status} onChange={(v) => set("status", v)} options={options.variance_status || []} testId="filter-status" />}
 
@@ -58,7 +59,7 @@ export default function FilterBar({ filters, values, setValues, options }) {
         <label className="text-[10px] font-mono-data uppercase tracking-wider text-muted-foreground">Pencarian</label>
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input value={values.search || ""} onChange={(e) => set("search", e.target.value)} placeholder="Cari part number, type..."
+          <Input value={values.search || ""} onChange={(e) => set("search", e.target.value)} placeholder="Cari ICS No., type, lane..."
             className="h-9 pl-8 bg-secondary/60 border-border" data-testid="filter-search" />
         </div>
       </div>

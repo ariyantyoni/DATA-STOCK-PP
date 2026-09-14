@@ -1,0 +1,30 @@
+{
+  "summary": "Full backend + frontend testing of new Excel-schema build. Rewrote outdated backend_test.py for new schema (Bahasa Indonesia columns lane/type/ics_no + formulas cap_h, total, blc, achievement, status, stock_sistem, variance, stok_jam). 23/23 pytest cases pass covering auth (admin effective_permissions all-write + is_main_admin), dashboard summary keys (kpi, stock_breakdown, assy_trend, smt_by_lane, top_shortage, top_variance), meta options, list+filter for all 5 datasets (seed 141 rows each verified), CRUD with formula assertions (SMT tt=30->cap_h=120, variance prev 1000/smt 500/assy 300/actual 1250/smt3 100/assy3 50 -> stock_sistem 1200 variance 50 SURPLUS, LAMP achievement/status, needs SHORTAGE, stock OK), user lifecycle (create with role=assembly + permissions override {variance:none, smt_production:write} -> GET /variance 403, POST /smt-production 200, POST /smt-stock 403; PUT change name/role/password/perms verified; DELETE), main-admin delete guard (400), self-delete guard (400), non-admin GET /users -> 403, template xlsx download, xlsx preview+confirm+reconfirm (2 inserted then 0 inserted / 2 updated). Playwright e2e: admin login shows all 4 KPI testids (kpi-smt/assy/shortage/variance), SMT Production page shows ICS No.+Total columns and Tambah button, Variance page shows Variance column, Users add-user-button opens UserDialog, filled user-name/email/password + user-role select + perm-variance-none + perm-smt_production-write + user-save creates user with success toast; SMT user (smt@cds.co.id): Manajemen User nav hidden, /users direct URL -> no-access data-testid visible, LAMP page has no Tambah button (read-only); freshly-created assembly user with variance override none: /variance nav hidden and direct URL -> no-access. All temp records + test user deleted. Seeded 141 rows/module preserved.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Users table", "issues": ["A stray user 'QA Perm' (qa.perm@cds.co.id) exists from a prior iteration; not seeded and not mine to remove per scope, but main agent may want to clean it up."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 738 lines - close to the 700-line guideline; consider splitting into routers/auth/crud/import modules.",
+    "normalize() uses a fragile list-comprehension to locate the dataset key: `DATASETS[[k for k,v in DATASETS.items() if v['module']==module][0]]`. Prefer building a MODULE_TO_DATASET dict once at import.",
+    "meta/options queries distinct() across all 5 collections on every call - fine now but consider caching for scale.",
+    "import_preview builds `columns` using a chained expression that only evaluates when `rows` is truthy but the ternary is at the end (`... if rows else []`), which technically works but is confusing; also duplicate-key handling is fine since dict preserves order.",
+    "seed_admin only resets password on mismatch; does not sync role/name if drifted. Not blocking for now.",
+    "No brute-force lockout on /auth/login (playbook mentions 5-fail lockout) - not explicitly requested in this iteration's spec.",
+    "CORSMiddleware allow_credentials=True with FRONTEND_URL is correct; cookie httponly+secure+samesite=none is set (works over https preview)."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (23/23)", "frontend": "100%"},
+  "test_credentials": "admin: ariyantyoni@gmail.com/admin123; assy@cds.co.id, smt@cds.co.id, ppic@cds.co.id, pc@cds.co.id, manager@cds.co.id all password123 (all verified).",
+  "seed_data_creation": "None created beyond ephemeral test records; all cleaned up. Confirmed startup seed of 141 rows per module (dates: smt/lamp/needs=2026-09-12, stock/variance=2026-09-13). Removed one leftover smt-production row from prior iteration (ics_no '1', 2026-09-14).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "New pytest file at /app/backend/tests/backend_test.py runs in ~8s with pytest-xdist (2 workers). If parallel collisions occur (list vs formula tests concurrently), test_seed_list checks 'any date matches' rather than 'first == seed_date' to avoid flakiness. Playwright covers login -> dashboard KPIs -> module pages -> user CRUD -> permission enforcement (no-access screen).",
+  "rca of the issue": "N/A - no issues found. Prior iteration_1 test file targeted the pre-refactor schema; fully rewritten this pass."
+}

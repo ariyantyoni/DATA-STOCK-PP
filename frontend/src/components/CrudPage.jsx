@@ -19,7 +19,7 @@ export default function CrudPage({
   columns, formFields, filters, options, refreshOptions,
 }) {
   const { user } = useAuth();
-  const writable = canWrite(user?.role, module);
+  const writable = canWrite(user, module);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [values, setValues] = useState({});
@@ -95,6 +95,7 @@ export default function CrudPage({
       return <span className={cn("font-mono-data", col.tone && (Number(v) >= 100 ? "text-emerald-400" : Number(v) >= 85 ? "text-amber-400" : "text-red-400"))}>{fmtPct(v)}</span>;
     if (col.type === "signed")
       return <span className={cn("font-mono-data", Number(v) < 0 ? "text-red-400" : Number(v) > 0 ? "text-emerald-400" : "text-muted-foreground")}>{Number(v) > 0 ? "+" : ""}{fmtNum(v)}</span>;
+    if (col.type === "strong") return <span className="font-mono-data font-semibold text-foreground">{fmtNum(v)}</span>;
     if (col.mono) return <span className="font-mono-data text-foreground">{v ?? "-"}</span>;
     return <span>{v ?? "-"}</span>;
   };

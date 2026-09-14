@@ -20,18 +20,23 @@ export function formatApiErrorDetail(detail) {
   return String(detail);
 }
 
-// Role-based write permissions (mirror of backend)
-export const WRITE_ROLES = {
-  smt_production: ["admin", "management", "production_control", "smt"],
-  lamp_production: ["admin", "management", "production_control", "assembly"],
-  smt_stock: ["admin", "management", "production_planning", "smt"],
-  production_needs: ["admin", "management", "production_planning"],
-  variance: ["admin", "management", "production_planning", "production_control"],
-  users: ["admin"],
+export const MODULE_ROUTES = {
+  smt_production: "/smt-production",
+  lamp_production: "/lamp-production",
+  smt_stock: "/smt-stock",
+  production_needs: "/production-needs",
+  variance: "/variance",
+  users: "/users",
 };
 
-export function canWrite(role, module) {
-  return (WRITE_ROLES[module] || []).includes(role);
+export function permOf(user, module) {
+  return user?.effective_permissions?.[module] || "none";
+}
+export function canRead(user, module) {
+  return permOf(user, module) !== "none";
+}
+export function canWrite(user, module) {
+  return permOf(user, module) === "write";
 }
 
 export const fmtNum = (v) =>

@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Button } from "@/components/ui/button";
 import api, { formatApiErrorDetail } from "@/lib/api";
 import { toast } from "sonner";
-import { UploadCloud, FileSpreadsheet, Loader2 } from "lucide-react";
+import { UploadCloud, FileSpreadsheet, Loader2, Download } from "lucide-react";
 
 export default function ImportDialog({ open, onOpenChange, dataset, title, onDone }) {
   const [file, setFile] = useState(null);
@@ -31,13 +31,25 @@ export default function ImportDialog({ open, onOpenChange, dataset, title, onDon
     }
   };
 
+  const downloadTemplate = async () => {
+    try {
+      const res = await api.get(`/import/${dataset}/template`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url; a.download = `template_${dataset}.xlsx`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error("Gagal mengunduh template");
+    }
+  };
+
   const confirm = async () => {
     setImporting(true);
     try {
       const fd = new FormData();
       fd.append("file", file);
       const { data } = await api.post(`/import/${dataset}/confirm`, fd);
-      toast.success(`${data.inserted} baris berhasil diimpor`);
+      toast.success(`${data.inserted} baris ditambahkan, ${data.updated} diperbarui${data.skipped ? `, ${data.skipped} dilewati` : ""}`);
       reset();
       onOpenChange(false);
       onDone?.();
@@ -55,8 +67,12 @@ export default function ImportDialog({ open, onOpenChange, dataset, title, onDon
           <DialogTitle className="font-heading flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-primary" /> Import {title}
           </DialogTitle>
-          <DialogDescription className="text-muted-foreground">Unggah file Excel/CSV, pratinjau data, lalu konfirmasi untuk menyimpan.</DialogDescription>
+          <DialogDescription className="text-muted-foreground">Unggah file Excel/CSV sesuai template (1 baris header), pratinjau data, lalu konfirmasi. Baris dengan Tanggal + ICS No. yang sama akan diperbarui.</DialogDescription>
         </DialogHeader>
+        <button type="button" onClick={downloadTemplate} data-testid="import-template-button"
+          className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline w-fit">
+          <Download className="w-3.5 h-3.5" /> Unduh template Excel
+        </button>
 
         {!preview && (
           <div
@@ -78,7 +94,11 @@ export default function ImportDialog({ open, onOpenChange, dataset, title, onDon
           <div className="space-y-3">
             <p className="text-xs font-mono-data text-muted-foreground">
               {file?.name} · {preview.total} baris terdeteksi · menampilkan {preview.rows.length}
+              {preview.invalid > 0 && <span className="text-red-400"> · {preview.invalid} baris tanpa Tanggal/ICS No. akan dilewati</span>}
             </p>
+            {preview.unknown_columns?.length > 0 && (
+              <p className="text-xs text-amber-400" data-testid="import-unknown-columns">Kolom tidak dikenal (diabaikan): {preview.unknown_columns.join(", ")}</p>
+            )}
             <div className="border border-border rounded-lg overflow-auto max-h-[45vh]">
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-secondary">

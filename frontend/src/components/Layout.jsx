@@ -6,14 +6,16 @@ import {
   Users as UsersIcon, LogOut, Factory, Menu, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { canRead } from "@/lib/api";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/smt-production", label: "Produksi SMT", icon: Cpu },
-  { to: "/lamp-production", label: "Produksi LAMP ASSY", icon: Lightbulb },
-  { to: "/smt-stock", label: "Stock SMT", icon: Boxes },
-  { to: "/production-needs", label: "Kebutuhan vs Stock", icon: ClipboardList },
-  { to: "/variance", label: "Variance Stock", icon: Scale },
+  { to: "/smt-production", label: "Produksi SMT", icon: Cpu, module: "smt_production" },
+  { to: "/lamp-production", label: "Produksi LAMP ASSY", icon: Lightbulb, module: "lamp_production" },
+  { to: "/smt-stock", label: "Stock SMT", icon: Boxes, module: "smt_stock" },
+  { to: "/production-needs", label: "Kebutuhan vs Stock", icon: ClipboardList, module: "production_needs" },
+  { to: "/variance", label: "Variance Stock", icon: Scale, module: "variance" },
+  { to: "/users", label: "Manajemen User", icon: UsersIcon, module: "users" },
 ];
 
 const ROLE_BADGE = {
@@ -30,8 +32,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
-  const nav = [...NAV];
-  if (user?.role === "admin") nav.push({ to: "/users", label: "Manajemen User", icon: UsersIcon });
+  const nav = NAV.filter((n) => !n.module || canRead(user, n.module));
 
   const handleLogout = async () => {
     await logout();

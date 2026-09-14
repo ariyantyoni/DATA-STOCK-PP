@@ -5,22 +5,22 @@ import os
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, UploadFile, File, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, UploadFile, File
+from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel, Field, EmailStr, BeforeValidator, ConfigDict
-from typing import List, Optional, Annotated
+from pydantic import BaseModel, EmailStr
+from typing import Optional, Dict
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 import logging
 import io
+import json
 import jwt
 import bcrypt
 import pandas as pd
+from openpyxl import Workbook
 
-# ---------------------------------------------------------------------------
-# DB
-# ---------------------------------------------------------------------------
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
@@ -35,10 +35,8 @@ app = FastAPI(title="Control Data Stock & Production")
 api = APIRouter(prefix="/api")
 
 # ---------------------------------------------------------------------------
-# Helpers: Mongo model base
+# Roles, modules & permissions
 # ---------------------------------------------------------------------------
-PyObjectId = Annotated[str, BeforeValidator(str)]
-
 ROLE_LABELS = {
     "admin": "Administrator",
     "management": "Management",
@@ -48,14 +46,39 @@ ROLE_LABELS = {
     "assembly": "Assembly (LAMP ASSY)",
 }
 
-WRITE_ROLES = {
-    "smt_production": {"admin", "management", "production_control", "smt"},
-    "lamp_production": {"admin", "management", "production_control", "assembly"},
-    "smt_stock": {"admin", "management", "production_planning", "smt"},
-    "production_needs": {"admin", "management", "production_planning"},
-    "variance": {"admin", "management", "production_planning", "production_control"},
-    "users": {"admin"},
+MODULES = {
+    "smt_production": "Produksi SMT",
+    "lamp_production": "Produksi LAMP ASSY",
+    "smt_stock": "Stock SMT",
+    "production_needs": "Kebutuhan vs Stock",
+    "variance": "Variance Stock",
+    "users": "Manajemen User",
 }
+LEVELS = ["none", "read", "write"]
+LEVEL_LABELS = {"none": "Tidak ada", "read": "Lihat", "write": "Ubah"}
+
+ROLE_DEFAULT_PERMS = {
+    "admin": {m: "write" for m in MODULES},
+    "management": {**{m: "write" for m in MODULES}, "users": "none"},
+    "production_planning": {"smt_production": "read", "lamp_production": "read", "smt_stock": "write",
+                            "production_needs": "write", "variance": "write", "users": "none"},
+    "production_control": {"smt_production": "write", "lamp_production": "write", "smt_stock": "read",
+                           "production_needs": "read", "variance": "write", "users": "none"},
+    "smt": {"smt_production": "write", "lamp_production": "read", "smt_stock": "write",
+            "production_needs": "read", "variance": "read", "users": "none"},
+    "assembly": {"smt_production": "read", "lamp_production": "write", "smt_stock": "read",
+                 "production_needs": "read", "variance": "read", "users": "none"},
+}
+
+
+def effective_perms(user: dict) -> Dict[str, str]:
+    base = dict(ROLE_DEFAULT_PERMS.get(user.get("role"), {}))
+    for m, lvl in (user.get("permissions") or {}).items():
+        if m in MODULES and lvl in LEVELS:
+            base[m] = lvl
+    if user.get("role") == "admin":
+        base["users"] = "write"
+    return base
 
 
 def hash_password(password: str) -> str:
@@ -75,6 +98,17 @@ def create_access_token(user_id: str, email: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
+def public_user(user: dict) -> dict:
+    user = dict(user)
+    user["id"] = str(user.pop("_id"))
+    user.pop("password_hash", None)
+    user["role_label"] = ROLE_LABELS.get(user.get("role"), user.get("role"))
+    user["permissions"] = user.get("permissions") or {}
+    user["effective_permissions"] = effective_perms(user)
+    user["is_main_admin"] = user.get("email") == os.environ.get("ADMIN_EMAIL", "").lower()
+    return user
+
+
 async def get_current_user(request: Request) -> dict:
     token = request.cookies.get("access_token")
     if not token:
@@ -85,23 +119,22 @@ async def get_current_user(request: Request) -> dict:
         raise HTTPException(status_code=401, detail="Tidak terautentikasi")
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
-        if not user:
-            raise HTTPException(status_code=401, detail="User tidak ditemukan")
-        user["id"] = str(user["_id"])
-        user.pop("_id", None)
-        user.pop("password_hash", None)
-        return user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Sesi berakhir, silakan login kembali")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token tidak valid")
+    user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
+    if not user:
+        raise HTTPException(status_code=401, detail="User tidak ditemukan")
+    return public_user(user)
 
 
-def require_write(module: str):
+def require_perm(module: str, level: str):
     async def dep(user: dict = Depends(get_current_user)):
-        if user["role"] not in WRITE_ROLES.get(module, set()):
-            raise HTTPException(status_code=403, detail="Anda tidak memiliki akses untuk mengubah data ini")
+        have = user["effective_permissions"].get(module, "none")
+        if LEVELS.index(have) < LEVELS.index(level):
+            msg = "Anda tidak memiliki akses ke modul ini" if level == "read" else "Anda tidak memiliki akses untuk mengubah data ini"
+            raise HTTPException(status_code=403, detail=msg)
         return user
     return dep
 
@@ -128,68 +161,119 @@ def num(v, default=0.0):
         return default
 
 
+def r1(v):
+    return round(v, 2)
+
+
 # ---------------------------------------------------------------------------
-# Calculation logic
+# Field definitions (sesuai kolom Excel DATA STOCK) & rumus
 # ---------------------------------------------------------------------------
+BASE_FIELDS = [("date", "Tanggal", False), ("lane", "Lane", False), ("type", "Type", False), ("ics_no", "ICS No.", False)]
+
+FIELDS = {
+    "smt_production": BASE_FIELDS + [
+        ("tt", "T/T (detik)", True), ("led_rank", "LED Rank", False),
+        ("smt1", "SMT Shift 1", True), ("smt2", "SMT Shift 2", True), ("smt3", "SMT Shift 3", True)],
+    "lamp_production": BASE_FIELDS + [
+        ("plan_assy", "Plan Assy", True), ("assy1", "Assy Shift 1", True), ("assy2", "Assy Shift 2", True),
+        ("assy3", "Assy Shift 3", True), ("stock_ok_prev", "Stock OK SMT Kemarin", True)],
+    "smt_stock": BASE_FIELDS + [
+        ("stock_ok_prev", "Stock OK SMT Kemarin", True), ("coating", "Coating", True),
+        ("belum_cutting", "Belum Cutting", True), ("belum_ict", "Belum ICT", True),
+        ("belum_fct", "Belum FCT", True), ("ok", "OK", True), ("tray", "Tray", False)],
+    "production_needs": BASE_FIELDS + [
+        ("plan_assy", "Plan Assy Hari Ini", True), ("stock_ok_prev", "Stock OK SMT Kemarin", True)],
+    "variance": BASE_FIELDS + [
+        ("total_stock_prev", "Total Stock Kemarin", True), ("smt_total", "Total Produksi SMT", True),
+        ("assy_total", "Total Produksi Assy", True), ("smt3", "SMT Shift 3", True),
+        ("assy3", "Assy Shift 3", True), ("actual_total_stock", "Actual Total Stock", True),
+        ("reason", "Keterangan", False)],
+}
+
+
 def compute_smt_production(d: dict) -> dict:
-    target = num(d.get("target"))
-    actual = num(d.get("actual"))
-    defect = num(d.get("defect"))
-    good = max(actual - defect, 0)
-    d["good"] = good
-    d["achievement"] = round((actual / target * 100), 1) if target else 0.0
-    d["yield_rate"] = round((good / actual * 100), 1) if actual else 0.0
-    d["balance"] = round(actual - target, 1)
+    tt = num(d.get("tt"))
+    d["cap_h"] = r1(3600 / tt) if tt else 0.0
+    d["total"] = r1(num(d.get("smt1")) + num(d.get("smt2")) + num(d.get("smt3")))
     return d
 
 
 def compute_lamp_production(d: dict) -> dict:
-    target = num(d.get("target"))
-    actual = num(d.get("actual"))
-    d["achievement"] = round((actual / target * 100), 1) if target else 0.0
-    d["balance"] = round(actual - target, 1)
-    d["status"] = "SELESAI" if actual >= target and target > 0 else ("PROSES" if actual > 0 else "BELUM MULAI")
+    plan = num(d.get("plan_assy"))
+    d["total"] = r1(num(d.get("assy1")) + num(d.get("assy2")) + num(d.get("assy3")))
+    d["blc"] = r1(num(d.get("stock_ok_prev")) - plan)
+    d["achievement"] = round(d["total"] / plan * 100, 1) if plan else 0.0
+    d["status"] = "SELESAI" if plan and d["total"] >= plan else ("PROSES" if d["total"] > 0 else "BELUM MULAI")
     return d
 
 
-def compute_stock_status(actual, safety, reorder) -> str:
-    actual = num(actual); safety = num(safety); reorder = num(reorder)
-    if actual < safety:
-        return "CRITICAL"
-    if actual < reorder:
-        return "REORDER"
-    return "AMAN"
-
-
 def compute_smt_stock(d: dict) -> dict:
-    d["status"] = compute_stock_status(d.get("actual_stock"), d.get("safety_stock"), d.get("reorder_level"))
+    d["total"] = r1(num(d.get("coating")) + num(d.get("belum_cutting")) + num(d.get("belum_ict"))
+                    + num(d.get("belum_fct")) + num(d.get("ok")))
+    d["wip"] = r1(d["total"] - num(d.get("ok")))
+    d["status"] = "OK" if num(d.get("ok")) > 0 else ("WIP" if d["total"] > 0 else "KOSONG")
+    return d
+
+
+def compute_needs(d: dict) -> dict:
+    plan = num(d.get("plan_assy"))
+    stock = num(d.get("stock_ok_prev"))
+    d["blc"] = r1(stock - plan)
+    d["fulfillment"] = round(stock / plan * 100, 1) if plan else 100.0
+    d["status"] = "SHORTAGE" if d["blc"] < 0 else ("PAS" if d["blc"] == 0 else "CUKUP")
     return d
 
 
 def compute_variance(d: dict) -> dict:
-    system_stock = num(d.get("system_stock"))
-    physical_stock = num(d.get("physical_stock"))
-    var = physical_stock - system_stock
-    d["variance"] = round(var, 2)
-    d["variance_pct"] = round((var / system_stock * 100), 2) if system_stock else 0.0
-    d["accuracy"] = round(max(0.0, 100 - abs(d["variance_pct"])), 2)
-    d["variance_status"] = "OK" if var == 0 else ("SURPLUS" if var > 0 else "SHORTAGE")
+    x = num(d.get("actual_total_stock"))
+    d["stok_jam"] = r1(x - num(d.get("smt3")) + num(d.get("assy3")))
+    d["stock_sistem"] = r1(num(d.get("total_stock_prev")) + num(d.get("smt_total")) - num(d.get("assy_total")))
+    d["variance"] = r1(x - d["stock_sistem"])
+    d["variance_pct"] = round(d["variance"] / d["stock_sistem"] * 100, 2) if d["stock_sistem"] else 0.0
+    d["variance_status"] = "OK" if d["variance"] == 0 else ("SURPLUS" if d["variance"] > 0 else "SHORTAGE")
     return d
 
 
+DATASETS = {
+    "smt-production": {"module": "smt_production", "compute": compute_smt_production, "sort": [("date", -1), ("lane", 1)]},
+    "lamp-production": {"module": "lamp_production", "compute": compute_lamp_production, "sort": [("date", -1), ("lane", 1)]},
+    "smt-stock": {"module": "smt_stock", "compute": compute_smt_stock, "sort": [("date", -1), ("lane", 1)]},
+    "production-needs": {"module": "production_needs", "compute": compute_needs, "sort": [("date", -1), ("lane", 1)]},
+    "variance": {"module": "variance", "compute": compute_variance, "sort": [("date", -1), ("lane", 1)]},
+}
+
+
+def normalize(module: str, body: dict) -> dict:
+    d = {}
+    for key, _label, is_num in FIELDS[module]:
+        v = body.get(key)
+        d[key] = num(v) if is_num else ("" if v is None else str(v).strip())
+    if module == "smt_stock" or module == "variance":
+        d["reason"] = str(body.get("reason") or "")
+    return DATASETS[[k for k, v in DATASETS.items() if v["module"] == module][0]]["compute"](d)
+
+
 # ---------------------------------------------------------------------------
-# Auth models & routes
+# Auth
 # ---------------------------------------------------------------------------
 class LoginBody(BaseModel):
     email: EmailStr
     password: str
 
 
-class RegisterBody(BaseModel):
+class UserCreate(BaseModel):
     email: EmailStr
     password: str
     name: str
     role: str
+    permissions: Optional[Dict[str, str]] = None
+
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    password: Optional[str] = None
+    permissions: Optional[Dict[str, str]] = None
 
 
 def set_cookie(resp: Response, token: str):
@@ -205,27 +289,11 @@ async def login(body: LoginBody, response: Response):
         raise HTTPException(status_code=401, detail="Email atau password salah")
     token = create_access_token(str(user["_id"]), email)
     set_cookie(response, token)
-    return {"token": token, "user": {"id": str(user["_id"]), "email": email,
-            "name": user["name"], "role": user["role"], "role_label": ROLE_LABELS.get(user["role"], user["role"])}}
-
-
-@api.post("/auth/register")
-async def register(body: RegisterBody, user: dict = Depends(require_write("users"))):
-    email = body.email.lower()
-    if body.role not in ROLE_LABELS:
-        raise HTTPException(status_code=400, detail="Role tidak valid")
-    if await db.users.find_one({"email": email}):
-        raise HTTPException(status_code=400, detail="Email sudah terdaftar")
-    doc = {"email": email, "password_hash": hash_password(body.password), "name": body.name,
-           "role": body.role, "created_at": datetime.now(timezone.utc).isoformat()}
-    res = await db.users.insert_one(doc)
-    return {"id": str(res.inserted_id), "email": email, "name": body.name, "role": body.role,
-            "role_label": ROLE_LABELS.get(body.role)}
+    return {"token": token, "user": public_user(user)}
 
 
 @api.get("/auth/me")
 async def me(user: dict = Depends(get_current_user)):
-    user["role_label"] = ROLE_LABELS.get(user["role"], user["role"])
     return user
 
 
@@ -235,286 +303,172 @@ async def logout(response: Response):
     return {"ok": True}
 
 
-@api.get("/users")
-async def list_users(user: dict = Depends(get_current_user)):
-    docs = await db.users.find({}, {"password_hash": 0}).sort("created_at", -1).to_list(500)
-    out = []
-    for d in docs:
-        d["id"] = str(d.pop("_id"))
-        d["role_label"] = ROLE_LABELS.get(d.get("role"), d.get("role"))
-        out.append(d)
+def validate_perms(perms: Optional[Dict[str, str]]) -> Dict[str, str]:
+    out = {}
+    for m, lvl in (perms or {}).items():
+        if m not in MODULES or lvl not in LEVELS:
+            raise HTTPException(status_code=400, detail=f"Hak akses tidak valid: {m}={lvl}")
+        out[m] = lvl
     return out
 
 
-@api.delete("/users/{uid}")
-async def delete_user(uid: str, user: dict = Depends(require_write("users"))):
+@api.get("/users")
+async def list_users(user: dict = Depends(require_perm("users", "read"))):
+    docs = await db.users.find({}).sort("created_at", -1).to_list(500)
+    return [public_user(d) for d in docs]
+
+
+@api.post("/users")
+@api.post("/auth/register")
+async def create_user(body: UserCreate, user: dict = Depends(require_perm("users", "write"))):
+    email = body.email.lower()
+    if body.role not in ROLE_LABELS:
+        raise HTTPException(status_code=400, detail="Role tidak valid")
+    if len(body.password) < 6:
+        raise HTTPException(status_code=400, detail="Password minimal 6 karakter")
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=400, detail="Email sudah terdaftar")
+    doc = {"email": email, "password_hash": hash_password(body.password), "name": body.name.strip(),
+           "role": body.role, "permissions": validate_perms(body.permissions),
+           "created_at": datetime.now(timezone.utc).isoformat()}
+    res = await db.users.insert_one(doc)
+    doc["_id"] = res.inserted_id
+    return public_user(doc)
+
+
+@api.put("/users/{uid}")
+async def update_user(uid: str, body: UserUpdate, user: dict = Depends(require_perm("users", "write"))):
     target = await db.users.find_one({"_id": oid(uid)})
-    if target and target.get("email") == os.environ.get("ADMIN_EMAIL", "").lower():
+    if not target:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan")
+    is_main_admin = target.get("email") == os.environ.get("ADMIN_EMAIL", "").lower()
+    upd = {}
+    if body.name is not None:
+        upd["name"] = body.name.strip()
+    if body.role is not None:
+        if body.role not in ROLE_LABELS:
+            raise HTTPException(status_code=400, detail="Role tidak valid")
+        if is_main_admin and body.role != "admin":
+            raise HTTPException(status_code=400, detail="Role admin utama tidak dapat diubah")
+        upd["role"] = body.role
+    if body.password:
+        if len(body.password) < 6:
+            raise HTTPException(status_code=400, detail="Password minimal 6 karakter")
+        upd["password_hash"] = hash_password(body.password)
+    if body.permissions is not None:
+        upd["permissions"] = {} if is_main_admin else validate_perms(body.permissions)
+    if upd:
+        upd["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await db.users.update_one({"_id": oid(uid)}, {"$set": upd})
+    return public_user(await db.users.find_one({"_id": oid(uid)}))
+
+
+@api.delete("/users/{uid}")
+async def delete_user(uid: str, user: dict = Depends(require_perm("users", "write"))):
+    target = await db.users.find_one({"_id": oid(uid)})
+    if not target:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan")
+    if target.get("email") == os.environ.get("ADMIN_EMAIL", "").lower():
         raise HTTPException(status_code=400, detail="Tidak dapat menghapus akun admin utama")
+    if str(target["_id"]) == user["id"]:
+        raise HTTPException(status_code=400, detail="Tidak dapat menghapus akun sendiri")
     await db.users.delete_one({"_id": oid(uid)})
     return {"ok": True}
 
 
 @api.get("/roles")
 async def get_roles(user: dict = Depends(get_current_user)):
-    return [{"value": k, "label": v} for k, v in ROLE_LABELS.items() if k != "admin"]
+    return [{"value": k, "label": v, "defaults": ROLE_DEFAULT_PERMS[k]} for k, v in ROLE_LABELS.items()]
+
+
+@api.get("/meta/modules")
+async def get_modules(user: dict = Depends(get_current_user)):
+    return {"modules": [{"key": k, "label": v} for k, v in MODULES.items()],
+            "levels": [{"value": k, "label": LEVEL_LABELS[k]} for k in LEVELS]}
 
 
 # ---------------------------------------------------------------------------
-# Generic filter builder
+# Generic CRUD per dataset
 # ---------------------------------------------------------------------------
-def build_query(date_from, date_to, lane, type_, part_number, status, shift, search):
+def build_query(p: dict) -> dict:
     q = {}
-    if date_from or date_to:
+    if p.get("date_from") or p.get("date_to"):
         rng = {}
-        if date_from:
-            rng["$gte"] = date_from
-        if date_to:
-            rng["$lte"] = date_to
+        if p.get("date_from"):
+            rng["$gte"] = p["date_from"]
+        if p.get("date_to"):
+            rng["$lte"] = p["date_to"]
         q["date"] = rng
-    if lane:
-        q["lane"] = lane
-    if type_:
-        q["type"] = type_
-    if part_number:
-        q["part_number"] = part_number
-    if status:
-        q["status"] = status
-    if shift:
-        q["shift"] = shift
-    if search:
-        q["$or"] = [
-            {"part_number": {"$regex": search, "$options": "i"}},
-            {"type": {"$regex": search, "$options": "i"}},
-            {"description": {"$regex": search, "$options": "i"}},
-            {"lane": {"$regex": search, "$options": "i"}},
-        ]
+    for k in ("lane", "type", "ics_no"):
+        if p.get(k):
+            q[k] = p[k]
+    if p.get("search"):
+        s = p["search"]
+        q["$or"] = [{f: {"$regex": s, "$options": "i"}} for f in ("ics_no", "type", "lane")]
     return q
 
 
-# ---------------------------------------------------------------------------
-# SMT PRODUCTION
-# ---------------------------------------------------------------------------
-@api.get("/smt-production")
-async def get_smt_production(date_from: Optional[str] = None, date_to: Optional[str] = None,
-                             lane: Optional[str] = None, type: Optional[str] = None,
-                             part_number: Optional[str] = None, shift: Optional[str] = None,
-                             search: Optional[str] = None, user: dict = Depends(get_current_user)):
-    q = build_query(date_from, date_to, lane, type, part_number, None, shift, search)
-    docs = await db.smt_production.find(q).sort("date", -1).to_list(2000)
-    return [clean(d) for d in docs]
+def register_crud(dataset: str):
+    cfg = DATASETS[dataset]
+    module = cfg["module"]
+    coll = db[module]
+
+    @api.get(f"/{dataset}")
+    async def list_items(date_from: Optional[str] = None, date_to: Optional[str] = None,
+                         lane: Optional[str] = None, type: Optional[str] = None, ics_no: Optional[str] = None,
+                         status: Optional[str] = None, search: Optional[str] = None,
+                         user: dict = Depends(require_perm(module, "read"))):
+        q = build_query({"date_from": date_from, "date_to": date_to, "lane": lane, "type": type,
+                         "ics_no": ics_no, "search": search})
+        docs = await coll.find(q).sort(cfg["sort"]).to_list(5000)
+        out = [clean(d) for d in docs]
+        if status:
+            out = [o for o in out if o.get("status") == status or o.get("variance_status") == status]
+        return out
+
+    @api.post(f"/{dataset}")
+    async def create_item(body: dict, user: dict = Depends(require_perm(module, "write"))):
+        d = normalize(module, body)
+        if not d.get("date") or not d.get("ics_no"):
+            raise HTTPException(status_code=400, detail="Tanggal dan ICS No. wajib diisi")
+        d["created_at"] = datetime.now(timezone.utc).isoformat()
+        res = await coll.insert_one(d)
+        d["id"] = str(res.inserted_id); d.pop("_id", None)
+        return d
+
+    @api.put(f"/{dataset}/{{rid}}")
+    async def update_item(rid: str, body: dict, user: dict = Depends(require_perm(module, "write"))):
+        d = normalize(module, body)
+        d["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await coll.update_one({"_id": oid(rid)}, {"$set": d})
+        doc = await coll.find_one({"_id": oid(rid)})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Data tidak ditemukan")
+        return clean(doc)
+
+    @api.delete(f"/{dataset}/{{rid}}")
+    async def delete_item(rid: str, user: dict = Depends(require_perm(module, "write"))):
+        await coll.delete_one({"_id": oid(rid)})
+        return {"ok": True}
 
 
-@api.post("/smt-production")
-async def create_smt_production(body: dict, user: dict = Depends(require_write("smt_production"))):
-    d = compute_smt_production(dict(body))
-    d["created_at"] = datetime.now(timezone.utc).isoformat()
-    res = await db.smt_production.insert_one(d)
-    d["id"] = str(res.inserted_id); d.pop("_id", None)
-    return d
-
-
-@api.put("/smt-production/{rid}")
-async def update_smt_production(rid: str, body: dict, user: dict = Depends(require_write("smt_production"))):
-    d = compute_smt_production(dict(body))
-    d.pop("id", None); d.pop("_id", None)
-    await db.smt_production.update_one({"_id": oid(rid)}, {"$set": d})
-    doc = await db.smt_production.find_one({"_id": oid(rid)})
-    return clean(doc)
-
-
-@api.delete("/smt-production/{rid}")
-async def delete_smt_production(rid: str, user: dict = Depends(require_write("smt_production"))):
-    await db.smt_production.delete_one({"_id": oid(rid)})
-    return {"ok": True}
-
-
-# ---------------------------------------------------------------------------
-# LAMP ASSY PRODUCTION
-# ---------------------------------------------------------------------------
-@api.get("/lamp-production")
-async def get_lamp_production(date_from: Optional[str] = None, date_to: Optional[str] = None,
-                              lane: Optional[str] = None, type: Optional[str] = None,
-                              part_number: Optional[str] = None, shift: Optional[str] = None,
-                              status: Optional[str] = None, search: Optional[str] = None,
-                              user: dict = Depends(get_current_user)):
-    q = build_query(date_from, date_to, lane, type, part_number, status, shift, search)
-    docs = await db.lamp_production.find(q).sort("date", -1).to_list(2000)
-    return [clean(d) for d in docs]
-
-
-@api.post("/lamp-production")
-async def create_lamp_production(body: dict, user: dict = Depends(require_write("lamp_production"))):
-    d = compute_lamp_production(dict(body))
-    d["created_at"] = datetime.now(timezone.utc).isoformat()
-    res = await db.lamp_production.insert_one(d)
-    d["id"] = str(res.inserted_id); d.pop("_id", None)
-    return d
-
-
-@api.put("/lamp-production/{rid}")
-async def update_lamp_production(rid: str, body: dict, user: dict = Depends(require_write("lamp_production"))):
-    d = compute_lamp_production(dict(body))
-    d.pop("id", None); d.pop("_id", None)
-    await db.lamp_production.update_one({"_id": oid(rid)}, {"$set": d})
-    doc = await db.lamp_production.find_one({"_id": oid(rid)})
-    return clean(doc)
-
-
-@api.delete("/lamp-production/{rid}")
-async def delete_lamp_production(rid: str, user: dict = Depends(require_write("lamp_production"))):
-    await db.lamp_production.delete_one({"_id": oid(rid)})
-    return {"ok": True}
+for _ds in DATASETS:
+    register_crud(_ds)
 
 
 # ---------------------------------------------------------------------------
-# SMT STOCK
-# ---------------------------------------------------------------------------
-@api.get("/smt-stock")
-async def get_smt_stock(type: Optional[str] = None, part_number: Optional[str] = None,
-                        status: Optional[str] = None, search: Optional[str] = None,
-                        user: dict = Depends(get_current_user)):
-    q = build_query(None, None, None, type, part_number, status, None, search)
-    docs = await db.smt_stock.find(q).sort("part_number", 1).to_list(3000)
-    return [clean(d) for d in docs]
-
-
-@api.post("/smt-stock")
-async def create_smt_stock(body: dict, user: dict = Depends(require_write("smt_stock"))):
-    d = compute_smt_stock(dict(body))
-    d["updated_at"] = datetime.now(timezone.utc).isoformat()
-    res = await db.smt_stock.insert_one(d)
-    d["id"] = str(res.inserted_id); d.pop("_id", None)
-    return d
-
-
-@api.put("/smt-stock/{rid}")
-async def update_smt_stock(rid: str, body: dict, user: dict = Depends(require_write("smt_stock"))):
-    d = compute_smt_stock(dict(body))
-    d.pop("id", None); d.pop("_id", None)
-    d["updated_at"] = datetime.now(timezone.utc).isoformat()
-    await db.smt_stock.update_one({"_id": oid(rid)}, {"$set": d})
-    doc = await db.smt_stock.find_one({"_id": oid(rid)})
-    return clean(doc)
-
-
-@api.delete("/smt-stock/{rid}")
-async def delete_smt_stock(rid: str, user: dict = Depends(require_write("smt_stock"))):
-    await db.smt_stock.delete_one({"_id": oid(rid)})
-    return {"ok": True}
-
-
-# ---------------------------------------------------------------------------
-# PRODUCTION NEEDS vs STOCK (Shortage control)
-# ---------------------------------------------------------------------------
-async def enrich_needs(docs):
-    stocks = await db.smt_stock.find({}).to_list(3000)
-    stock_map = {s["part_number"]: num(s.get("actual_stock")) for s in stocks}
-    out = []
-    for d in docs:
-        dd = clean(d)
-        required = num(dd.get("required_qty"))
-        stock_actual = stock_map.get(dd.get("part_number"), 0.0)
-        dd["stock_actual"] = stock_actual
-        bal = stock_actual - required
-        dd["balance"] = round(bal, 2)
-        dd["shortage_qty"] = round(abs(bal), 2) if bal < 0 else 0.0
-        dd["fulfillment"] = round((stock_actual / required * 100), 1) if required else 100.0
-        dd["status"] = "SHORTAGE" if bal < 0 else ("PAS" if bal == 0 else "CUKUP")
-        out.append(dd)
-    return out
-
-
-@api.get("/production-needs")
-async def get_production_needs(date_from: Optional[str] = None, date_to: Optional[str] = None,
-                               type: Optional[str] = None, part_number: Optional[str] = None,
-                               status: Optional[str] = None, search: Optional[str] = None,
-                               user: dict = Depends(get_current_user)):
-    q = build_query(date_from, date_to, None, type, part_number, None, None, search)
-    docs = await db.production_needs.find(q).sort("date", -1).to_list(3000)
-    enriched = await enrich_needs(docs)
-    if status:
-        enriched = [e for e in enriched if e["status"] == status]
-    return enriched
-
-
-@api.post("/production-needs")
-async def create_production_needs(body: dict, user: dict = Depends(require_write("production_needs"))):
-    d = dict(body)
-    d["created_at"] = datetime.now(timezone.utc).isoformat()
-    res = await db.production_needs.insert_one(d)
-    doc = await db.production_needs.find_one({"_id": res.inserted_id})
-    return (await enrich_needs([doc]))[0]
-
-
-@api.put("/production-needs/{rid}")
-async def update_production_needs(rid: str, body: dict, user: dict = Depends(require_write("production_needs"))):
-    d = dict(body); d.pop("id", None); d.pop("_id", None)
-    await db.production_needs.update_one({"_id": oid(rid)}, {"$set": d})
-    doc = await db.production_needs.find_one({"_id": oid(rid)})
-    return (await enrich_needs([doc]))[0]
-
-
-@api.delete("/production-needs/{rid}")
-async def delete_production_needs(rid: str, user: dict = Depends(require_write("production_needs"))):
-    await db.production_needs.delete_one({"_id": oid(rid)})
-    return {"ok": True}
-
-
-# ---------------------------------------------------------------------------
-# VARIANCE
-# ---------------------------------------------------------------------------
-@api.get("/variance")
-async def get_variance(date_from: Optional[str] = None, date_to: Optional[str] = None,
-                       type: Optional[str] = None, part_number: Optional[str] = None,
-                       status: Optional[str] = None, search: Optional[str] = None,
-                       user: dict = Depends(get_current_user)):
-    q = build_query(date_from, date_to, None, type, part_number, None, None, search)
-    docs = await db.variance.find(q).sort("date", -1).to_list(3000)
-    out = [clean(d) for d in docs]
-    if status:
-        out = [o for o in out if o.get("variance_status") == status]
-    return out
-
-
-@api.post("/variance")
-async def create_variance(body: dict, user: dict = Depends(require_write("variance"))):
-    d = compute_variance(dict(body))
-    d["created_at"] = datetime.now(timezone.utc).isoformat()
-    res = await db.variance.insert_one(d)
-    d["id"] = str(res.inserted_id); d.pop("_id", None)
-    return d
-
-
-@api.put("/variance/{rid}")
-async def update_variance(rid: str, body: dict, user: dict = Depends(require_write("variance"))):
-    d = compute_variance(dict(body)); d.pop("id", None); d.pop("_id", None)
-    await db.variance.update_one({"_id": oid(rid)}, {"$set": d})
-    doc = await db.variance.find_one({"_id": oid(rid)})
-    return clean(doc)
-
-
-@api.delete("/variance/{rid}")
-async def delete_variance(rid: str, user: dict = Depends(require_write("variance"))):
-    await db.variance.delete_one({"_id": oid(rid)})
-    return {"ok": True}
-
-
-# ---------------------------------------------------------------------------
-# META options for filters
+# META options
 # ---------------------------------------------------------------------------
 @api.get("/meta/options")
 async def meta_options(user: dict = Depends(get_current_user)):
-    lanes = sorted({x for x in await db.smt_production.distinct("lane") if x})
-    types = sorted({x for x in (await db.smt_production.distinct("type") +
-                    await db.smt_stock.distinct("type") +
-                    await db.lamp_production.distinct("type")) if x})
-    parts = sorted({x for x in (await db.smt_stock.distinct("part_number") +
-                    await db.smt_production.distinct("part_number")) if x})
-    lamp_lines = sorted({x for x in await db.lamp_production.distinct("lane") if x})
-    return {"lanes": lanes, "types": types, "part_numbers": parts, "lamp_lines": lamp_lines,
-            "shifts": ["Shift 1", "Shift 2", "Shift 3"],
-            "stock_status": ["AMAN", "REORDER", "CRITICAL"],
+    lanes, types, ics = set(), set(), set()
+    for m in ("smt_production", "lamp_production", "smt_stock", "production_needs", "variance"):
+        lanes |= {x for x in await db[m].distinct("lane") if x}
+        types |= {x for x in await db[m].distinct("type") if x}
+        ics |= {x for x in await db[m].distinct("ics_no") if x}
+    return {"lanes": sorted(lanes), "types": sorted(types), "ics_nos": sorted(ics),
+            "stock_status": ["OK", "WIP", "KOSONG"],
+            "lamp_status": ["SELESAI", "PROSES", "BELUM MULAI"],
             "needs_status": ["CUKUP", "PAS", "SHORTAGE"],
             "variance_status": ["OK", "SURPLUS", "SHORTAGE"]}
 
@@ -525,139 +479,168 @@ async def meta_options(user: dict = Depends(get_current_user)):
 @api.get("/dashboard/summary")
 async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[str] = None,
                             user: dict = Depends(get_current_user)):
-    dq = {}
-    if date_from or date_to:
-        rng = {}
-        if date_from:
-            rng["$gte"] = date_from
-        if date_to:
-            rng["$lte"] = date_to
-        dq["date"] = rng
+    dq = build_query({"date_from": date_from, "date_to": date_to})
+    smt = await db.smt_production.find(dq).to_list(10000)
+    lamp = await db.lamp_production.find(dq).to_list(10000)
+    needs = await db.production_needs.find(dq).to_list(10000)
+    var = await db.variance.find(dq).to_list(10000)
 
-    smt = await db.smt_production.find(dq).to_list(5000)
-    lamp = await db.lamp_production.find(dq).to_list(5000)
-    stock = await db.smt_stock.find({}).to_list(5000)
-    needs_docs = await db.production_needs.find(dq).to_list(5000)
-    needs = await enrich_needs(needs_docs)
-    var = await db.variance.find(dq).to_list(5000)
+    stock_dates = await db.smt_stock.distinct("date", dq)
+    stock = await db.smt_stock.find({"date": max(stock_dates)}).to_list(10000) if stock_dates else []
 
-    smt_target = sum(num(x.get("target")) for x in smt)
-    smt_actual = sum(num(x.get("actual")) for x in smt)
-    smt_defect = sum(num(x.get("defect")) for x in smt)
-    lamp_target = sum(num(x.get("target")) for x in lamp)
-    lamp_actual = sum(num(x.get("actual")) for x in lamp)
-
-    stock_critical = sum(1 for s in stock if compute_stock_status(s.get("actual_stock"), s.get("safety_stock"), s.get("reorder_level")) == "CRITICAL")
-    stock_reorder = sum(1 for s in stock if compute_stock_status(s.get("actual_stock"), s.get("safety_stock"), s.get("reorder_level")) == "REORDER")
-    stock_aman = len(stock) - stock_critical - stock_reorder
-
-    shortage_items = [n for n in needs if n["status"] == "SHORTAGE"]
+    smt_total = sum(num(x.get("total")) for x in smt)
+    plan_assy = sum(num(x.get("plan_assy")) for x in lamp)
+    assy_total = sum(num(x.get("total")) for x in lamp)
+    stock_ok = sum(num(x.get("ok")) for x in stock)
+    stock_total = sum(num(x.get("total")) for x in stock)
+    shortage_items = [clean(n) for n in needs if n.get("status") == "SHORTAGE"]
     variance_items = [v for v in var if num(v.get("variance")) != 0]
-    accuracy = round(sum(num(v.get("accuracy")) for v in var) / len(var), 1) if var else 100.0
 
-    # SMT production trend by date
-    trend = {}
+    def trend(rows, keys):
+        m = {}
+        for x in rows:
+            t = m.setdefault(x.get("date", ""), {"date": x.get("date", "")})
+            for k, src in keys.items():
+                t[k] = t.get(k, 0) + num(x.get(src))
+        return sorted(m.values(), key=lambda r: r["date"])[-14:]
+
+    by_lane = {}
     for x in smt:
-        d = x.get("date", "")
-        t = trend.setdefault(d, {"date": d, "target": 0, "actual": 0, "defect": 0})
-        t["target"] += num(x.get("target")); t["actual"] += num(x.get("actual")); t["defect"] += num(x.get("defect"))
-    smt_trend = sorted(trend.values(), key=lambda r: r["date"])[-14:]
+        t = by_lane.setdefault(x.get("lane") or "-", {"lane": x.get("lane") or "-", "smt1": 0, "smt2": 0, "smt3": 0})
+        for s in ("smt1", "smt2", "smt3"):
+            t[s] += num(x.get(s))
 
-    lamp_trend_map = {}
-    for x in lamp:
-        d = x.get("date", "")
-        t = lamp_trend_map.setdefault(d, {"date": d, "target": 0, "actual": 0})
-        t["target"] += num(x.get("target")); t["actual"] += num(x.get("actual"))
-    lamp_trend = sorted(lamp_trend_map.values(), key=lambda r: r["date"])[-14:]
-
-    # top shortage
-    top_shortage = sorted(shortage_items, key=lambda n: n["shortage_qty"], reverse=True)[:6]
+    stock_breakdown = [
+        {"name": "OK", "value": stock_ok},
+        {"name": "Belum FCT", "value": sum(num(x.get("belum_fct")) for x in stock)},
+        {"name": "Belum ICT", "value": sum(num(x.get("belum_ict")) for x in stock)},
+        {"name": "Belum Cutting", "value": sum(num(x.get("belum_cutting")) for x in stock)},
+        {"name": "Coating", "value": sum(num(x.get("coating")) for x in stock)},
+    ]
 
     return {
         "kpi": {
-            "smt_target": smt_target, "smt_actual": smt_actual, "smt_defect": smt_defect,
-            "smt_achievement": round((smt_actual / smt_target * 100), 1) if smt_target else 0.0,
-            "smt_yield": round(((smt_actual - smt_defect) / smt_actual * 100), 1) if smt_actual else 0.0,
-            "lamp_target": lamp_target, "lamp_actual": lamp_actual,
-            "lamp_achievement": round((lamp_actual / lamp_target * 100), 1) if lamp_target else 0.0,
-            "shortage_count": len(shortage_items),
-            "variance_count": len(variance_items),
-            "stock_accuracy": accuracy,
-            "stock_total": len(stock),
+            "smt_total": smt_total, "smt_items": len(smt),
+            "plan_assy": plan_assy, "assy_total": assy_total,
+            "assy_achievement": round(assy_total / plan_assy * 100, 1) if plan_assy else 0.0,
+            "stock_ok": stock_ok, "stock_total": stock_total, "stock_items": len(stock),
+            "stock_date": max(stock_dates) if stock_dates else None,
+            "shortage_count": len(shortage_items), "needs_items": len(needs),
+            "variance_count": len(variance_items), "variance_items": len(var),
+            "variance_sum": sum(num(v.get("variance")) for v in var),
         },
-        "stock_status": [
-            {"name": "AMAN", "value": stock_aman},
-            {"name": "REORDER", "value": stock_reorder},
-            {"name": "CRITICAL", "value": stock_critical},
-        ],
-        "smt_trend": smt_trend,
-        "lamp_trend": lamp_trend,
-        "top_shortage": top_shortage,
+        "stock_breakdown": stock_breakdown,
+        "smt_trend": trend(smt, {"total": "total"}),
+        "assy_trend": trend(lamp, {"plan": "plan_assy", "actual": "total"}),
+        "smt_by_lane": sorted(by_lane.values(), key=lambda r: r["lane"]),
+        "top_shortage": sorted(shortage_items, key=lambda n: n["blc"])[:6],
+        "top_variance": sorted([clean(v) for v in variance_items], key=lambda v: abs(num(v.get("variance"))), reverse=True)[:6],
     }
 
 
 # ---------------------------------------------------------------------------
-# EXCEL / CSV IMPORT
+# EXCEL / CSV IMPORT + TEMPLATE
 # ---------------------------------------------------------------------------
-IMPORT_MAP = {
-    "smt-production": {"collection": "smt_production", "module": "smt_production", "compute": compute_smt_production},
-    "lamp-production": {"collection": "lamp_production", "module": "lamp_production", "compute": compute_lamp_production},
-    "smt-stock": {"collection": "smt_stock", "module": "smt_stock", "compute": compute_smt_stock},
-    "production-needs": {"collection": "production_needs", "module": "production_needs", "compute": None},
-    "variance": {"collection": "variance", "module": "variance", "compute": compute_variance},
-}
-
-NUMERIC_FIELDS = {"target", "actual", "defect", "actual_stock", "safety_stock", "reorder_level",
-                  "required_qty", "system_stock", "physical_stock"}
+def header_map(module: str) -> Dict[str, str]:
+    m = {}
+    for key, label, _ in FIELDS[module]:
+        m[key.lower()] = key
+        m[label.lower()] = key
+    m["part number"] = "ics_no"; m["part_number"] = "ics_no"; m["ics no."] = "ics_no"; m["ics no"] = "ics_no"
+    m["tanggal"] = "date"; m["keterangan"] = "reason"; m["reason"] = "reason"
+    return m
 
 
 def parse_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:
     if filename.lower().endswith(".csv"):
-        return pd.read_csv(io.BytesIO(file_bytes))
-    return pd.read_excel(io.BytesIO(file_bytes))
+        dff = pd.read_csv(io.BytesIO(file_bytes), dtype=str)
+    else:
+        dff = pd.read_excel(io.BytesIO(file_bytes), dtype=str)
+    dff = dff.dropna(how="all")
+    return dff.where(pd.notnull(dff), None)
+
+
+def map_rows(module: str, dff: pd.DataFrame):
+    hm = header_map(module)
+    cols = {c: hm.get(str(c).strip().lower()) for c in dff.columns}
+    unknown = [c for c, k in cols.items() if k is None]
+    rows = []
+    for rec in dff.to_dict(orient="records"):
+        r = {}
+        for c, k in cols.items():
+            if k:
+                r[k] = rec[c]
+        if r.get("date"):
+            try:
+                r["date"] = pd.to_datetime(r["date"]).strftime("%Y-%m-%d")
+            except Exception:
+                pass
+        if r.get("ics_no"):
+            s = str(r["ics_no"]).strip()
+            r["ics_no"] = s.split(".")[0].zfill(10) if s.replace(".", "").isdigit() else s
+        rows.append(normalize(module, r))
+    return rows, unknown
+
+
+@api.get("/import/{dataset}/template")
+async def import_template(dataset: str, user: dict = Depends(get_current_user)):
+    if dataset not in DATASETS:
+        raise HTTPException(status_code=400, detail="Dataset tidak dikenal")
+    module = DATASETS[dataset]["module"]
+    wb = Workbook(); ws = wb.active; ws.title = MODULES[module][:30]
+    labels = [label for _, label, _ in FIELDS[module]]
+    ws.append(labels)
+    sample = await db[module].find_one({}) or {}
+    ws.append([sample.get(k, "") if k != "date" else datetime.now().strftime("%Y-%m-%d") for k, _, _ in FIELDS[module]])
+    for i, _ in enumerate(labels, 1):
+        ws.column_dimensions[ws.cell(1, i).column_letter].width = 20
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f'attachment; filename="template_{dataset}.xlsx"'})
 
 
 @api.post("/import/{dataset}/preview")
 async def import_preview(dataset: str, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    if dataset not in IMPORT_MAP:
+    if dataset not in DATASETS:
         raise HTTPException(status_code=400, detail="Dataset tidak dikenal")
-    content = await file.read()
+    module = DATASETS[dataset]["module"]
     try:
-        dff = parse_dataframe(content, file.filename)
+        dff = parse_dataframe(await file.read(), file.filename)
+        rows, unknown = map_rows(module, dff)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Gagal membaca file: {e}")
-    dff = dff.where(pd.notnull(dff), None)
-    rows = dff.to_dict(orient="records")
-    return {"columns": list(dff.columns), "rows": rows[:100], "total": len(rows)}
+    invalid = sum(1 for r in rows if not r.get("date") or not r.get("ics_no"))
+    columns = [k for k, _, _ in FIELDS[module]] + [k for k in rows[0].keys() if rows and k not in [f[0] for f in FIELDS[module]]] if rows else []
+    return {"columns": columns, "rows": rows[:100], "total": len(rows), "invalid": invalid, "unknown_columns": unknown}
 
 
 @api.post("/import/{dataset}/confirm")
 async def import_confirm(dataset: str, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    if dataset not in IMPORT_MAP:
+    if dataset not in DATASETS:
         raise HTTPException(status_code=400, detail="Dataset tidak dikenal")
-    cfg = IMPORT_MAP[dataset]
-    if user["role"] not in WRITE_ROLES.get(cfg["module"], set()):
+    module = DATASETS[dataset]["module"]
+    if user["effective_permissions"].get(module) != "write":
         raise HTTPException(status_code=403, detail="Anda tidak memiliki akses import untuk data ini")
-    content = await file.read()
     try:
-        dff = parse_dataframe(content, file.filename)
+        dff = parse_dataframe(await file.read(), file.filename)
+        rows, _ = map_rows(module, dff)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Gagal membaca file: {e}")
-    dff = dff.where(pd.notnull(dff), None)
-    rows = dff.to_dict(orient="records")
-    inserted = 0
     now = datetime.now(timezone.utc).isoformat()
+    inserted = updated = skipped = 0
     for r in rows:
-        r = {str(k).strip(): v for k, v in r.items()}
-        for f in NUMERIC_FIELDS:
-            if f in r:
-                r[f] = num(r[f])
-        if cfg["compute"]:
-            r = cfg["compute"](r)
-        r["created_at"] = now
-        await db[cfg["collection"]].insert_one(r)
-        inserted += 1
-    return {"inserted": inserted}
+        if not r.get("date") or not r.get("ics_no"):
+            skipped += 1
+            continue
+        key = {"date": r["date"], "ics_no": r["ics_no"]}
+        existing = await db[module].find_one(key)
+        if existing:
+            r["updated_at"] = now
+            await db[module].update_one(key, {"$set": r}); updated += 1
+        else:
+            r["created_at"] = now
+            await db[module].insert_one(r); inserted += 1
+    return {"inserted": inserted, "updated": updated, "skipped": skipped}
 
 
 app.include_router(api)
@@ -672,17 +655,19 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
-# Startup: indexes, admin seed, sample data
+# Startup: indexes, admin seed, data seed dari DATA STOCK.xlsx
 # ---------------------------------------------------------------------------
+SEED_VERSION = 2
+
+
 async def seed_admin():
     email = os.environ.get("ADMIN_EMAIL", "admin@example.com").lower()
     password = os.environ.get("ADMIN_PASSWORD", "admin123")
     existing = await db.users.find_one({"email": email})
     if existing is None:
         await db.users.insert_one({"email": email, "password_hash": hash_password(password),
-                                   "name": "Admin Utama", "role": "admin",
+                                   "name": "Admin Utama", "role": "admin", "permissions": {},
                                    "created_at": datetime.now(timezone.utc).isoformat()})
-        logger.info("Admin seeded")
     elif not verify_password(password, existing["password_hash"]):
         await db.users.update_one({"email": email}, {"$set": {"password_hash": hash_password(password)}})
 
@@ -698,88 +683,45 @@ async def seed_demo_users():
     for email, name, role in demos:
         if not await db.users.find_one({"email": email}):
             await db.users.insert_one({"email": email, "password_hash": hash_password("password123"),
-                                       "name": name, "role": role,
+                                       "name": name, "role": role, "permissions": {},
                                        "created_at": datetime.now(timezone.utc).isoformat()})
 
 
-async def seed_sample_data():
-    if await db.smt_production.count_documents({}) > 0:
+async def seed_from_excel():
+    meta = await db.meta.find_one({"_id": "seed"})
+    if meta and meta.get("version") == SEED_VERSION:
         return
-    from datetime import date
-    today = date.today()
-    lanes = ["Lane 1", "Lane 2", "Lane 3", "Lane 4"]
-    types = ["HL- ADV150", "TL-BEAT", "HL-VARIO160", "DRL-PCX160"]
-    parts = ["CHIP-R0402-10K", "CHIP-C0603-100N", "LED-3528-W", "IC-DRV-8871", "CONN-04P-JST", "DIODE-SS14"]
-
-    smt_rows = []
-    import random
-    for i in range(14):
-        d = (today - timedelta(days=13 - i)).isoformat()
-        for lane in lanes:
-            for shift in ["Shift 1", "Shift 2"]:
-                target = random.choice([1200, 1500, 1800, 2000])
-                actual = target - random.randint(-150, 250)
-                defect = random.randint(2, 40)
-                row = compute_smt_production({
-                    "date": d, "lane": lane, "shift": shift,
-                    "part_number": random.choice(parts), "type": random.choice(types),
-                    "target": target, "actual": actual, "defect": defect,
-                    "created_at": datetime.now(timezone.utc).isoformat()})
-                smt_rows.append(row)
-    await db.smt_production.insert_many(smt_rows)
-
-    lamp_lines = ["Head Lamp Line A", "Tail Lamp Line B", "DRL Line C"]
-    lamp_types = ["HL-ADV150", "TL-BEAT", "DRL-PCX160"]
-    lamp_rows = []
-    for i in range(14):
-        d = (today - timedelta(days=13 - i)).isoformat()
-        for line, tp in zip(lamp_lines, lamp_types):
-            target = random.choice([400, 500, 600])
-            actual = target - random.randint(-50, 80)
-            lamp_rows.append(compute_lamp_production({
-                "date": d, "lane": line, "type": tp, "shift": "Shift 1",
-                "part_number": tp, "target": target, "actual": actual,
-                "created_at": datetime.now(timezone.utc).isoformat()}))
-    await db.lamp_production.insert_many(lamp_rows)
-
-    stock_rows = []
-    descs = {"CHIP-R0402-10K": "Resistor 0402 10K Ohm", "CHIP-C0603-100N": "Capacitor 0603 100nF",
-             "LED-3528-W": "LED SMD 3528 White", "IC-DRV-8871": "Motor Driver IC DRV8871",
-             "CONN-04P-JST": "Connector JST 4 Pin", "DIODE-SS14": "Schottky Diode SS14"}
-    stock_vals = [
-        ("CHIP-R0402-10K", 250000, 80000, 120000, "Reel"),
-        ("CHIP-C0603-100N", 45000, 60000, 90000, "Reel"),
-        ("LED-3528-W", 15000, 20000, 35000, "Reel"),
-        ("IC-DRV-8871", 8500, 5000, 8000, "Tray"),
-        ("CONN-04P-JST", 3200, 4000, 7000, "Tray"),
-        ("DIODE-SS14", 90000, 30000, 50000, "Reel"),
-    ]
-    for pn, actual, safety, reorder, unit in stock_vals:
-        stock_rows.append(compute_smt_stock({
-            "part_number": pn, "description": descs[pn], "type": "Component", "unit": unit,
-            "actual_stock": actual, "safety_stock": safety, "reorder_level": reorder,
-            "updated_at": datetime.now(timezone.utc).isoformat()}))
-    await db.smt_stock.insert_many(stock_rows)
-
-    needs_rows = []
-    needs_vals = [("CHIP-R0402-10K", 180000), ("CHIP-C0603-100N", 70000), ("LED-3528-W", 22000),
-                  ("IC-DRV-8871", 6000), ("CONN-04P-JST", 5000), ("DIODE-SS14", 40000)]
-    for pn, req in needs_vals:
-        needs_rows.append({"date": today.isoformat(), "part_number": pn, "type": "Component",
-                           "model": "MPS Mingguan", "required_qty": req,
-                           "created_at": datetime.now(timezone.utc).isoformat()})
-    await db.production_needs.insert_many(needs_rows)
-
-    var_rows = []
-    var_vals = [("CHIP-R0402-10K", 250000, 249200), ("CHIP-C0603-100N", 45000, 45000),
-                ("LED-3528-W", 15000, 14550), ("IC-DRV-8871", 8500, 8620),
-                ("CONN-04P-JST", 3200, 3150), ("DIODE-SS14", 90000, 89000)]
-    for pn, sys_s, phys in var_vals:
-        var_rows.append(compute_variance({"date": today.isoformat(), "part_number": pn, "type": "Component",
-                        "system_stock": sys_s, "physical_stock": phys, "reason": "",
-                        "created_at": datetime.now(timezone.utc).isoformat()}))
-    await db.variance.insert_many(var_rows)
-    logger.info("Sample data seeded")
+    path = ROOT_DIR / "seed" / "data_stock.json"
+    if not path.exists():
+        return
+    rows = json.loads(path.read_text())
+    prod_date, stock_date = "2026-09-12", "2026-09-13"
+    now = datetime.now(timezone.utc).isoformat()
+    payload = {cfg["module"]: [] for cfg in DATASETS.values()}
+    for r in rows:
+        base = {"lane": r["lane"], "type": r["type"], "ics_no": r["ics_no"]}
+        smt = normalize("smt_production", {**base, "date": prod_date, "tt": r["tt"], "led_rank": r["led_rank"],
+                                           "smt1": r["smt1"], "smt2": r["smt2"], "smt3": r["smt3"]})
+        lamp = normalize("lamp_production", {**base, "date": prod_date, "plan_assy": r["plan_assy"], "assy1": r["assy1"],
+                                             "assy2": r["assy2"], "assy3": r["assy3"], "stock_ok_prev": r["stock_ok_prev"]})
+        stock = normalize("smt_stock", {**base, "date": stock_date, "stock_ok_prev": r["stock_ok_prev"], "coating": r["coating"],
+                                        "belum_cutting": r["belum_cutting"], "belum_ict": r["belum_ict"],
+                                        "belum_fct": r["belum_fct"], "ok": r["ok"], "tray": r["tray"]})
+        needs = normalize("production_needs", {**base, "date": prod_date, "plan_assy": r["plan_assy"], "stock_ok_prev": r["stock_ok_prev"]})
+        var = normalize("variance", {**base, "date": stock_date, "total_stock_prev": r["total_stock_prev"],
+                                     "smt_total": smt["total"], "assy_total": lamp["total"], "smt3": r["smt3"],
+                                     "assy3": r["assy3"], "actual_total_stock": stock["total"]})
+        for m, d in (("smt_production", smt), ("lamp_production", lamp), ("smt_stock", stock),
+                     ("production_needs", needs), ("variance", var)):
+            d["created_at"] = now
+            payload[m].append(d)
+    for m, docs in payload.items():
+        await db[m].delete_many({})
+        if docs:
+            await db[m].insert_many(docs)
+        await db[m].create_index([("date", -1), ("ics_no", 1)])
+    await db.meta.update_one({"_id": "seed"}, {"$set": {"version": SEED_VERSION, "at": now}}, upsert=True)
+    logger.info("Seeded %d items from DATA STOCK.xlsx", len(rows))
 
 
 @app.on_event("startup")
@@ -787,7 +729,7 @@ async def startup():
     await db.users.create_index("email", unique=True)
     await seed_admin()
     await seed_demo_users()
-    await seed_sample_data()
+    await seed_from_excel()
 
 
 @app.on_event("shutdown")
