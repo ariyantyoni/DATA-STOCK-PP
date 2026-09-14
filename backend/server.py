@@ -13,6 +13,7 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional, Dict
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
+from pymongo.errors import DuplicateKeyError
 import logging
 import io
 import json
@@ -105,6 +106,7 @@ def public_user(user: dict) -> dict:
     user.pop("password_hash", None)
     user["role_label"] = ROLE_LABELS.get(user.get("role"), user.get("role"))
     user["permissions"] = user.get("permissions") or {}
+    user["email"] = user.get("email") or ""
     user["effective_permissions"] = effective_perms(user)
     user["is_main_admin"] = user.get("email") == os.environ.get("ADMIN_EMAIL", "").lower()
     return user
@@ -351,10 +353,15 @@ async def create_user(body: UserCreate, user: dict = Depends(require_perm("users
         raise HTTPException(status_code=400, detail="Username sudah dipakai")
     if email and await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Email sudah terdaftar")
-    doc = {"username": username, "email": email, "password_hash": hash_password(body.password), "name": body.name.strip(),
+    doc = {"username": username, "password_hash": hash_password(body.password), "name": body.name.strip(),
            "role": body.role, "permissions": validate_perms(body.permissions),
            "created_at": datetime.now(timezone.utc).isoformat()}
-    res = await db.users.insert_one(doc)
+    if email:
+        doc["email"] = email
+    try:
+        res = await db.users.insert_one(doc)
+    except DuplicateKeyError:
+        raise HTTPException(status_code=400, detail="Username atau email sudah dipakai")
     doc["_id"] = res.inserted_id
     return public_user(doc)
 
@@ -371,12 +378,11 @@ async def update_user(uid: str, body: UserUpdate, user: dict = Depends(require_p
         if await db.users.find_one({"username": uname, "_id": {"$ne": target["_id"]}}):
             raise HTTPException(status_code=400, detail="Username sudah dipakai")
         upd["username"] = uname
-    if body.email is not None:
+    if body.email is not None and not is_main_admin:
         em = body.email.lower()
         if await db.users.find_one({"email": em, "_id": {"$ne": target["_id"]}}):
             raise HTTPException(status_code=400, detail="Email sudah terdaftar")
-        if not is_main_admin:
-            upd["email"] = em
+        upd["email"] = em
     if body.name is not None:
         upd["name"] = body.name.strip()
     if body.role is not None:
@@ -393,7 +399,10 @@ async def update_user(uid: str, body: UserUpdate, user: dict = Depends(require_p
         upd["permissions"] = {} if is_main_admin else validate_perms(body.permissions)
     if upd:
         upd["updated_at"] = datetime.now(timezone.utc).isoformat()
-        await db.users.update_one({"_id": oid(uid)}, {"$set": upd})
+        try:
+            await db.users.update_one({"_id": oid(uid)}, {"$set": upd})
+        except DuplicateKeyError:
+            raise HTTPException(status_code=400, detail="Username atau email sudah dipakai")
     return public_user(await db.users.find_one({"_id": oid(uid)}))
 
 
@@ -804,7 +813,9 @@ async def startup():
         await db.users.drop_index("email_1")
     except Exception:
         pass
-    await db.users.create_index("email", unique=True, sparse=True)
+    await db.users.update_many({"email": None}, {"$unset": {"email": ""}})
+    await db.users.create_index("email", unique=True,
+                                partialFilterExpression={"email": {"$type": "string"}})
     await db.users.create_index("username", unique=True, sparse=True)
     await seed_admin()
     await seed_demo_users()

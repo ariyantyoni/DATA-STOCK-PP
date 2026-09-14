@@ -1,0 +1,26 @@
+{
+  "summary": "Verified user-management bug fix (email null unique index -> partial index). Backend: 10/10 tests passed on new /app/backend/tests/test_users_mgmt.py covering login (username + email fallback), creating two users without email consecutively (previously 500), duplicate username returns 400 (not 500), GET /api/users returns email='' not null, edit (with role/password/permissions change) and re-login, delete, and main-admin protection. Frontend: verified login page shows only username+password (no demo accounts), admin login works, Manajemen User page loads, added two users with NO email consecutively and both showed 'User berhasil dibuat' toast (bug fixed), usernames rendered in table, duplicate-username submit produced backend 400 and 'Username sudah dipakai' toast (visible in screenshot), delete flow via user-delete-confirm works, main admin row has no delete button.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_users_mgmt.py",
+    "/app/test_reports/pytest/users_mgmt_results.xml"
+  ],
+  "action_items": [
+    "Existing /app/backend/tests/backend_test.py still uses email-based login payload ({'email':..., 'password':...}) which is incompatible with new LoginBody (expects 'username'). All fixtures there will 422. Recommend main agent update backend_test.py fixtures to send {'username': ADMIN['email'], 'password': ...} so historical regression tests continue to pass."
+  ],
+  "critical_code_review_comments": [
+    "server.py public_user() sets email='' when missing (good). effective_perms() correctly forces users=write for admin.",
+    "startup(): drop_index('email_1') is safely wrapped in try/except; partial index on email with $type:'string' plus unset of null emails handles the migration cleanly.",
+    "seed_admin() updates password if changed AND updates username if missing – idempotent seeding is correct.",
+    "server.py is 829 lines — approaching the 700-line guidance; consider splitting into auth/users/crud modules eventually (non-blocking)."
+  ],
+  "updated_files": ["/app/backend/tests/test_users_mgmt.py"],
+  "success_rate": {"backend": "100% (10/10 new tests)", "frontend": "100% of tested user-mgmt flows"},
+  "test_credentials": "admin/admin123 (main), smt/password123, ppic/password123, etc.",
+  "seed_data_creation": "Test users created inside tests are cleaned up in teardown_class; UI test also deleted the two users it created.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Bug fix (unique email index + null handling) is fully verified end-to-end. Note that legacy /app/backend/tests/backend_test.py fixtures still send {'email':...,'password':...} to /api/auth/login which now expects {'username':..., 'password':...}; those old tests may 422 until fixed by main agent. New test_users_mgmt.py is the authoritative regression file for user management and login.",
+  "rca of the issue": "RCA: MongoDB unique index on `email` allowed only one document with email=null (MongoDB treats missing keys as null under standard unique index). Adding a second no-email user triggered DuplicateKeyError -> 500. Fix: (1) drop old email_1 index, unset null emails, (2) create partial unique index on email restricted to string values, (3) do not persist email field when empty on create, (4) catch DuplicateKeyError and return 400 with message. All verified via test_create_two_users_without_email + UI walkthrough."
+}
