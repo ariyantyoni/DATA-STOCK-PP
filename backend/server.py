@@ -267,12 +267,13 @@ def normalize(module: str, body: dict) -> dict:
 # Auth
 # ---------------------------------------------------------------------------
 class LoginBody(BaseModel):
-    email: EmailStr
+    username: str
     password: str
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    username: str
+    email: Optional[EmailStr] = None
     password: str
     name: str
     role: str
@@ -280,10 +281,19 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    email: Optional[EmailStr] = None
     name: Optional[str] = None
     role: Optional[str] = None
     password: Optional[str] = None
     permissions: Optional[Dict[str, str]] = None
+
+
+def norm_username(u: str) -> str:
+    u = (u or "").strip().lower()
+    if len(u) < 3 or not all(c.isalnum() or c in "._-@" for c in u):
+        raise HTTPException(status_code=400, detail="Username minimal 3 karakter (huruf, angka, titik, _ , -)")
+    return u
 
 
 def set_cookie(resp: Response, token: str):
@@ -293,11 +303,11 @@ def set_cookie(resp: Response, token: str):
 
 @api.post("/auth/login")
 async def login(body: LoginBody, response: Response):
-    email = body.email.lower()
-    user = await db.users.find_one({"email": email})
+    ident = body.username.strip().lower()
+    user = await db.users.find_one({"$or": [{"username": ident}, {"email": ident}]})
     if not user or not verify_password(body.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Email atau password salah")
-    token = create_access_token(str(user["_id"]), email)
+        raise HTTPException(status_code=401, detail="Username atau password salah")
+    token = create_access_token(str(user["_id"]), user.get("email") or ident)
     set_cookie(response, token)
     return {"token": token, "user": public_user(user)}
 
@@ -331,14 +341,17 @@ async def list_users(user: dict = Depends(require_perm("users", "read"))):
 @api.post("/users")
 @api.post("/auth/register")
 async def create_user(body: UserCreate, user: dict = Depends(require_perm("users", "write"))):
-    email = body.email.lower()
+    username = norm_username(body.username)
+    email = body.email.lower() if body.email else None
     if body.role not in ROLE_LABELS:
         raise HTTPException(status_code=400, detail="Role tidak valid")
     if len(body.password) < 6:
         raise HTTPException(status_code=400, detail="Password minimal 6 karakter")
-    if await db.users.find_one({"email": email}):
+    if await db.users.find_one({"username": username}):
+        raise HTTPException(status_code=400, detail="Username sudah dipakai")
+    if email and await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Email sudah terdaftar")
-    doc = {"email": email, "password_hash": hash_password(body.password), "name": body.name.strip(),
+    doc = {"username": username, "email": email, "password_hash": hash_password(body.password), "name": body.name.strip(),
            "role": body.role, "permissions": validate_perms(body.permissions),
            "created_at": datetime.now(timezone.utc).isoformat()}
     res = await db.users.insert_one(doc)
@@ -353,6 +366,17 @@ async def update_user(uid: str, body: UserUpdate, user: dict = Depends(require_p
         raise HTTPException(status_code=404, detail="User tidak ditemukan")
     is_main_admin = target.get("email") == os.environ.get("ADMIN_EMAIL", "").lower()
     upd = {}
+    if body.username is not None:
+        uname = norm_username(body.username)
+        if await db.users.find_one({"username": uname, "_id": {"$ne": target["_id"]}}):
+            raise HTTPException(status_code=400, detail="Username sudah dipakai")
+        upd["username"] = uname
+    if body.email is not None:
+        em = body.email.lower()
+        if await db.users.find_one({"email": em, "_id": {"$ne": target["_id"]}}):
+            raise HTTPException(status_code=400, detail="Email sudah terdaftar")
+        if not is_main_admin:
+            upd["email"] = em
     if body.name is not None:
         upd["name"] = body.name.strip()
     if body.role is not None:
@@ -688,11 +712,14 @@ async def seed_admin():
     password = os.environ.get("ADMIN_PASSWORD", "admin123")
     existing = await db.users.find_one({"email": email})
     if existing is None:
-        await db.users.insert_one({"email": email, "password_hash": hash_password(password),
+        await db.users.insert_one({"username": os.environ.get("ADMIN_USERNAME", "admin"), "email": email,
+                                   "password_hash": hash_password(password),
                                    "name": "Admin Utama", "role": "admin", "permissions": {},
                                    "created_at": datetime.now(timezone.utc).isoformat()})
     elif not verify_password(password, existing["password_hash"]):
         await db.users.update_one({"email": email}, {"$set": {"password_hash": hash_password(password)}})
+    if existing is not None and not existing.get("username"):
+        await db.users.update_one({"email": email}, {"$set": {"username": os.environ.get("ADMIN_USERNAME", "admin")}})
 
 
 async def seed_demo_users():
@@ -704,10 +731,13 @@ async def seed_demo_users():
         ("manager@cds.co.id", "Manager Eko", "management"),
     ]
     for email, name, role in demos:
+        uname = email.split("@")[0]
         if not await db.users.find_one({"email": email}):
-            await db.users.insert_one({"email": email, "password_hash": hash_password("password123"),
+            await db.users.insert_one({"username": uname, "email": email, "password_hash": hash_password("password123"),
                                        "name": name, "role": role, "permissions": {},
                                        "created_at": datetime.now(timezone.utc).isoformat()})
+    async for u in db.users.find({"username": {"$exists": False}}):
+        await db.users.update_one({"_id": u["_id"]}, {"$set": {"username": (u.get("email") or str(u["_id"])).split("@")[0]}})
 
 
 async def seed_from_excel():
@@ -770,7 +800,12 @@ async def seed_items():
 
 @app.on_event("startup")
 async def startup():
-    await db.users.create_index("email", unique=True)
+    try:
+        await db.users.drop_index("email_1")
+    except Exception:
+        pass
+    await db.users.create_index("email", unique=True, sparse=True)
+    await db.users.create_index("username", unique=True, sparse=True)
     await seed_admin()
     await seed_demo_users()
     await seed_from_excel()

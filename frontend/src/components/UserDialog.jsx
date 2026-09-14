@@ -13,12 +13,12 @@ const LEVEL_STYLE = {
 };
 
 export default function UserDialog({ open, onOpenChange, editing, roles, modules, levels, onSubmit, saving }) {
-  const [form, setForm] = useState({ name: "", email: "", password: "", role: "", permissions: {} });
+  const [form, setForm] = useState({ name: "", username: "", email: "", password: "", role: "", permissions: {} });
   const isMainAdmin = editing?.is_main_admin;
 
   useEffect(() => {
     if (open) setForm({
-      name: editing?.name || "", email: editing?.email || "", password: "",
+      name: editing?.name || "", username: editing?.username || "", email: editing?.email || "", password: "",
       role: editing?.role || "", permissions: { ...(editing?.permissions || {}) },
     });
   }, [open, editing]);
@@ -34,8 +34,8 @@ export default function UserDialog({ open, onOpenChange, editing, roles, modules
 
   const submit = (e) => {
     e.preventDefault();
-    const payload = { name: form.name, role: form.role, permissions: form.permissions };
-    if (!editing) payload.email = form.email;
+    const payload = { name: form.name, username: form.username, role: form.role, permissions: form.permissions };
+    if (form.email) payload.email = form.email;
     if (form.password) payload.password = form.password;
     onSubmit(payload);
   };
@@ -51,8 +51,10 @@ export default function UserDialog({ open, onOpenChange, editing, roles, modules
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Nama</Label>
               <Input value={form.name} onChange={(e) => set("name", e.target.value)} required className="bg-secondary/60 border-border" data-testid="user-name" /></div>
-            <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Email</Label>
-              <Input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} required disabled={!!editing} className="bg-secondary/60 border-border" data-testid="user-email" /></div>
+            <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Username (untuk login)</Label>
+              <Input value={form.username} onChange={(e) => set("username", e.target.value)} required minLength={3} autoComplete="off" className="bg-secondary/60 border-border font-mono-data" data-testid="user-username" /></div>
+            <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Email (opsional)</Label>
+              <Input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} disabled={isMainAdmin} className="bg-secondary/60 border-border" data-testid="user-email" /></div>
             <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">{editing ? "Password baru (kosongkan jika tidak diubah)" : "Password"}</Label>
               <Input type="password" value={form.password} onChange={(e) => set("password", e.target.value)} required={!editing} minLength={6} className="bg-secondary/60 border-border" data-testid="user-password" /></div>
             <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Role</Label>

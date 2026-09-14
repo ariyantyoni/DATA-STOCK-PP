@@ -44,6 +44,7 @@ Aplikasi web profesional untuk Control Data Stock & Production di perusahaan man
 - Tested: 23/23 backend pytest + Playwright e2e (iteration_2), 100% pass.
 - Nilai kemarin otomatis: GET /api/prev-values?date&ics_no → stock_ok_prev/total_stock_prev dari Stock SMT tanggal sebelumnya; RecordDialog mengisi otomatis (mode tambah) dengan hint sumber, nilai tetap bisa diubah manual.
 - Master Item (modul `items`, hak akses tersendiri): CRUD + import/template, 119 item unik di-seed dari Excel; ItemPicker (combobox cari) di semua form tambah/edit mengisi Lane/Type/ICS/T-T/LED Rank/Tray otomatis.
+- Login via **username + password** (email tetap diterima sebagai fallback); kotak "Akun demo" di halaman login dihapus. User punya field `username` (unik), email opsional; admin utama username `admin` (ADMIN_USERNAME).
 
 ## Backlog / Remaining
 - P1: (kosong)

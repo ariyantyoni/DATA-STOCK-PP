@@ -9,7 +9,7 @@ import { Factory, Loader2, Cpu } from "lucide-react";
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -19,7 +19,7 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      await login(email, password);
+      await login(username, password);
       navigate("/");
     } catch (err) {
       setError(formatApiErrorDetail(err.response?.data?.detail) || err.message);
@@ -73,9 +73,9 @@ export default function Login() {
 
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Email</Label>
-              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
-                placeholder="nama@perusahaan.co.id" className="bg-secondary/60 border-border h-11" data-testid="login-email" />
+              <Label className="text-xs text-muted-foreground">Username</Label>
+              <Input type="text" value={username} onChange={(e) => setUsername(e.target.value)} required autoComplete="username"
+                placeholder="username" className="bg-secondary/60 border-border h-11" data-testid="login-username" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Password</Label>
@@ -87,13 +87,6 @@ export default function Login() {
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Masuk"}
             </Button>
           </form>
-
-          <div className="mt-6 text-xs text-muted-foreground bg-secondary/40 border border-border rounded-md p-3 font-mono-data">
-            <p className="text-foreground mb-1">Akun demo:</p>
-            <p>manager@cds.co.id / password123 (Management)</p>
-            <p>ppic@cds.co.id / password123 (PPIC)</p>
-            <p>smt@cds.co.id / password123 (SMT)</p>
-          </div>
         </div>
       </div>
     </div>

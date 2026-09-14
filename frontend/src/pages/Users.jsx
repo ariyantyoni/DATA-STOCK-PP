@@ -95,20 +95,21 @@ export default function Users() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-secondary/80 border-b border-border">
-              {["Nama", "Email", "Role", "Hak Akses Modul", "Aksi"].map((h) => (
+              {["Nama", "Username", "Email", "Role", "Hak Akses Modul", "Aksi"].map((h) => (
                 <th key={h} className="px-4 py-3 text-left font-mono-data text-[11px] uppercase tracking-wider text-muted-foreground whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={5} className="px-4 py-16 text-center"><Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" /></td></tr>
+              <tr><td colSpan={6} className="px-4 py-16 text-center"><Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" /></td></tr>
             ) : users.map((u, i) => {
               const isMain = !!u.is_main_admin;
               return (
                 <tr key={u.id} data-testid={`user-row-${i}`} className="border-b border-border/50 hover:bg-secondary/40 transition-colors">
                   <td className="px-4 py-3 font-medium whitespace-nowrap">{u.name}{isMain && <ShieldCheck className="inline w-3.5 h-3.5 ml-1.5 text-primary" />}</td>
-                  <td className="px-4 py-3 font-mono-data text-muted-foreground">{u.email}</td>
+                  <td className="px-4 py-3 font-mono-data text-foreground" data-testid={`user-username-${i}`}>{u.username}</td>
+                  <td className="px-4 py-3 font-mono-data text-muted-foreground">{u.email || "-"}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-block text-xs font-mono-data px-2 py-0.5 rounded-full border whitespace-nowrap ${ROLE_BADGE[u.role] || "bg-slate-500/10 text-slate-400 border-slate-500/30"}`}>{u.role_label}</span>
                   </td>

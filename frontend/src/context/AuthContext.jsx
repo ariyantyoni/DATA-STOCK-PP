@@ -20,8 +20,8 @@ export function AuthProvider({ children }) {
     })();
   }, []);
 
-  const login = async (email, password) => {
-    const { data } = await api.post("/auth/login", { email, password });
+  const login = async (username, password) => {
+    const { data } = await api.post("/auth/login", { username, password });
     if (data.token) localStorage.setItem("cds_token", data.token);
     setUser(data.user);
     return data.user;
