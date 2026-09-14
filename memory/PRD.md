@@ -42,9 +42,10 @@ Aplikasi web profesional untuk Control Data Stock & Production di perusahaan man
 - Import: downloadable Excel template per modul (1 header row, label Indonesia), preview shows invalid/unknown columns, confirm upserts by (date, ics_no).
 - Manajemen User: tambah/edit/hapus, reset password, role, matrix hak akses per modul (Tidak ada/Lihat/Ubah) dengan override; nav & routes guarded; backend require_perm.
 - Tested: 23/23 backend pytest + Playwright e2e (iteration_2), 100% pass.
+- Nilai kemarin otomatis: GET /api/prev-values?date&ics_no → stock_ok_prev/total_stock_prev dari Stock SMT tanggal sebelumnya; RecordDialog mengisi otomatis (mode tambah) dengan hint sumber, nilai tetap bisa diubah manual.
 
 ## Backlog / Remaining
-- P1: Auto-isi nilai "kemarin" (stock_ok_prev, total_stock_prev) dari laporan tanggal sebelumnya; master item (lane/type/ICS/T/T) untuk autocomplete form.
+- P1: Master item (lane/type/ICS/T/T) untuk autocomplete form.
 - P2: Export Excel dengan layout asli DATA STOCK; brute-force lockout; password reset; split server.py.
 
 ## Next Tasks

@@ -456,6 +456,16 @@ for _ds in DATASETS:
     register_crud(_ds)
 
 
+@api.get("/prev-values")
+async def prev_values(date: str, ics_no: str, user: dict = Depends(get_current_user)):
+    doc = await db.smt_stock.find({"ics_no": ics_no, "date": {"$lt": date}}).sort("date", -1).limit(1).to_list(1)
+    if not doc:
+        return {"found": False}
+    d = doc[0]
+    return {"found": True, "source_date": d["date"], "stock_ok_prev": num(d.get("ok")),
+            "total_stock_prev": num(d.get("total"))}
+
+
 # ---------------------------------------------------------------------------
 # META options
 # ---------------------------------------------------------------------------
