@@ -1,0 +1,123 @@
+{
+  "project_title": "Control Data Stock & Production - Automotive Manufacturing MES",
+  "app_type": "dashboard / saas_app (Industrial ERP & Production Control)",
+  "language": "Bahasa Indonesia",
+  "archetype": "THE PERFORMANCE PRO (Tactical Industrial Precision)",
+  "theme": "Industrial Dark Mode with Tactical High-Contrast Accents",
+  "typography": {
+    "font_family_heading": "Outfit, sans-serif",
+    "font_family_body": "Inter, sans-serif",
+    "font_family_mono": "JetBrains Mono, Source Code Pro, monospace",
+    "font_weights": {
+      "heading": "700 / Bold or 600 / SemiBold",
+      "body": "400 / Regular or 500 / Medium",
+      "mono_data": "500 / Medium"
+    },
+    "scale": {
+      "h1": "text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight",
+      "h2": "text-2xl sm:text-3xl font-semibold tracking-tight",
+      "h3": "text-lg sm:text-xl font-semibold",
+      "h4": "text-base sm:text-lg font-medium",
+      "body": "text-sm sm:text-base leading-relaxed",
+      "caption": "text-xs font-mono uppercase tracking-wider text-slate-400"
+    }
+  },
+  "colors": {
+    "base_background": "#090D16 (slate-950 deep obsidian industrial)",
+    "surface_card": "#111827 (slate-900 border-slate-800)",
+    "surface_hover": "#1E293B (slate-800)",
+    "border": "#1E293B (slate-800) and #334155 (slate-700)",
+    "text_primary": "#F8FAFC (slate-50)",
+    "text_secondary": "#94A3B8 (slate-400)",
+    "text_muted": "#64748B (slate-500)",
+    "accent_primary": "#38BDF8 (sky-400 - SMT digital flow / main highlight)",
+    "accent_warning_amber": "#F59E0B (amber-500 - Stock Warning / Reorder Point)",
+    "accent_danger_red": "#EF4444 (red-500 - Shortage Alert / Defect / Variance Negative)",
+    "accent_success_emerald": "#10B981 (emerald-500 - Target Reached / Stock Surplus)",
+    "accent_lamp_assy": "#F97316 (orange-500 - Lamp Assembly Line)",
+    "forbidden_colors": ["#7351B7 (AI Purple)", "#1B93A4 (Teal Blue for dashboards)"]
+  },
+  "layout_and_spacing": {
+    "dashboard_grid_mode": "MODE B: High Density Grid (Tactical Control Room)",
+    "grid_columns": "grid-cols-1 md:grid-cols-12 gap-4 lg:gap-6",
+    "padding": "p-4 sm:p-6 lg:p-8",
+    "card_padding": "p-4 lg:p-6",
+    "containers": "Use sharp 1px borders with border-slate-800, subtle hover highlight, cardless or clean bounded surfaces with bg-slate-900/90",
+    "header_navigation": "Sticky top-0 z-50 backdrop-blur-md bg-slate-950/90 border-b border-slate-800 px-6 py-3 flex items-center justify-between"
+  },
+  "visual_enhancers": {
+    "card_style": "High-density industrial panel with crisp 1px border border-slate-800/80 bg-slate-900/80 rounded-lg shadow-sm backdrop-blur-xs hover:border-slate-700 transition-colors",
+    "kpi_badges": "Font-mono badge with glowing indicators: Emerald green dot for OK, Amber pulse dot for Low Stock, Red flashing dot for Shortage Critical",
+    "tables": "Dense matrix tables with sticky header bg-slate-900/95, zebra rows bg-slate-950/40, monospace part numbers and quantities, badge status pills",
+    "micro_interactions": "Smooth active state feedback on table filtering, Excel import drag-and-drop preview modal, animated KPI counters"
+  },
+  "role_based_access": {
+    "roles": ["Production Planning (PPIC)", "Production Control (PC)", "SMT Operator/Leader", "Assembly (LAMP ASSY)", "Management / Executive"],
+    "badge_colors": {
+      "Production Planning": "bg-blue-500/10 text-blue-400 border-blue-500/30",
+      "Production Control": "bg-amber-500/10 text-amber-400 border-amber-500/30",
+      "SMT Operator": "bg-cyan-500/10 text-cyan-400 border-cyan-500/30",
+      "Assembly Leader": "bg-orange-500/10 text-orange-400 border-orange-500/30",
+      "Management": "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+    }
+  },
+  "key_features_and_modules": [
+    {
+      "name": "Dashboard & KPI Utama",
+      "desc": "Ringkasan Total Output SMT vs Target, Total Output LAMP ASSY, Total Shortage Items, Variance Stock, dan OEE/Efficiency Rate dengan grafik Trend Harian."
+    },
+    {
+      "name": "Monitoring Produksi SMT",
+      "desc": "Tabel & visualisasi hasil produksi SMT per Lane (Lane 1 - Lane 4), Shift (Shift 1 - Shift 3), Part Number, Model/Type, Target vs Actual, Defect, Yield Rate."
+    },
+    {
+      "name": "Monitoring Produksi LAMP ASSY",
+      "desc": "Tabel produksi per Line Lampu Otomotif (Head Lamp, Tail Lamp, DRL), Komponen SMT yang terpakai, Actual vs Target, Status Penyelesaian."
+    },
+    {
+      "name": "Stock Monitoring SMT",
+      "desc": "Matriks stok bahan baku/komponen SMT (Reel/Tray), Safety Stock, Stock Aktual, Minimum Reorder Level, Status (AMAN, REORDER, CRITICAL)."
+    },
+    {
+      "name": "Kebutuhan Produksi vs Stock (Shortage Control)",
+      "desc": "Kalkulasi otomatis kebutuhan part berdasarkan MPS/Plan Produksi dibanding Stok SMT saat ini. Auto-highlight barang yang Kurang (Shortage)."
+    },
+    {
+      "name": "Laporan Variance Stock",
+      "desc": "Perbandingan Stock System vs Stock Fisik (Stock Opname), Selisih (Variance), Persentase Akurasi, dan Form Penyesuaian / Alasan Selisih."
+    },
+    {
+      "name": "Import Excel/CSV & Form Input Manual",
+      "desc": "Fitur unggah laporan Excel harian (drag & drop) dengan pratinjau data & validasi otomatis, plus Form Input Manual cepat untuk SMT & Assembly."
+    },
+    {
+      "name": "Filter Multi-Dimensi",
+      "desc": "Filter global: Tanggal / Range Tanggal, Shift, Sub-Line / Lane, Type Lampu / Car Model, Part Number, & Status Stock."
+    }
+  ],
+  "image_urls": {
+    "login_hero": "https://images.unsplash.com/photo-1581091212991-8891c7d4bd9b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHw0fHxhdXRvbW90aXZlJTIwU01UJTIwYXNzZW1ibHklMjBmYWN0b3J5JTIwbWFudWZhY3R1cmluZyUyMGVsZWN0cm9uaWNzfGVufDB8fHx8MTc4OTM1ODgxOHww&ixlib=rb-4.1.0&q=85",
+    "factory_background": "https://images.unsplash.com/photo-1647427060118-4911c9821b82?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwzfHxhdXRvbW90aXZlJTIwU01UJTIwYXNzZW1ibHklMjBmYWN0b3J5JTIwbWFudWZhY3R1cmluZyUyMGVsZWN0cm9uaWNzfGVufDB8fHx8MTc4OTM1ODgxOHww&ixlib=rb-4.1.0&q=85",
+    "circuit_board_macro": "https://images.unsplash.com/photo-1518770660439-4636190af475?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NDh8MHwxfHNlYXJjaHw0fHxjaXJjdWl0JTIwYm9hcmR8ZW58MHx8fHwxNzg5MzU4ODI3fDA&ixlib=rb-4.1.0&q=85",
+    "smt_tech_texture": "https://images.unsplash.com/photo-1580584126903-c17d41830450?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NDh8MHwxfHNlYXJjaHwzfHxjaXJjdWl0JTIwYm9hcmR8ZW58MHx8fHwxNzg5MzU4ODI3fDA&ixlib=rb-4.1.0&q=85"
+  },
+  "instructions_to_main_agent": [
+    "Aplikasi adalah tool internal manufaktur otomotif profesional berbahasa Indonesia untuk Control Data Stock & Production (SMT & LAMP ASSY).",
+    "Pastikan layout sangat responsif, memiliki sidebar navigasi yang rapi, dan sticky top header dengan indikator user role (PPIC, PC, SMT, Assembly, Executive).",
+    "Semua tabel harus interaktif: pencarian instan, filter multi-dimensi (Tanggal, Lane, Model, Part Number, Status), sorting kolom, dan pagination.",
+    "Beri perhitungan otomatis: Variance = Stock Aktual - Stock System; Shortage = Stock SMT - Kebutuhan Produksi (highlight merah jika negative).",
+    "Sediakan modal/dialog untuk Import Excel/CSV dengan preview data tabel sebelum konfirmasi simpan.",
+    "Gunakan komponen Shadcn UI (Table, Dialog, Tabs, Select, Badge, Card, Popover, Input) yang telah distyle dengan tema dark industrial slate.",
+    "Tambahkan fitur filter cepat untuk memilih Perusahaan / Plant (misal: Plant 1 - SMT, Plant 2 - LAMP ASSY).",
+    "Setiap elemen interaktif (tombol, input, filter, tab, badge) WAJIB menyertakan attribute data-testid dalam kebab-case (contoh: data-testid='filter-part-number-input')."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Avoid generic centered layouts. Create high-density tactical grids with structured borders.",
+    "You MUST NOT apply universal transition (e.g. transition: all). Always add specific transitions like transition: color 0.2s, border-color 0.2s.",
+    "You MUST NOT center align the app container. Do not add .App { text-align: center; }.",
+    "NEVER use AI assistant Emoji characters like 🤖🧠💭💡 for icons. Use Lucide icons (e.g. Factory, Cpu, Layers, AlertTriangle, FileSpreadsheet, Download, RefreshCw).",
+    "Use 2-3x generous internal padding inside cards with borders to avoid text colliding with edges.",
+    "All interactive elements MUST include data-testid attribute for stable testing."
+  ]
+}
