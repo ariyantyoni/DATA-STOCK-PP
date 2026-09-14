@@ -52,6 +52,7 @@ MODULES = {
     "smt_stock": "Stock SMT",
     "production_needs": "Kebutuhan vs Stock",
     "variance": "Variance Stock",
+    "items": "Master Item",
     "users": "Manajemen User",
 }
 LEVELS = ["none", "read", "write"]
@@ -61,13 +62,13 @@ ROLE_DEFAULT_PERMS = {
     "admin": {m: "write" for m in MODULES},
     "management": {**{m: "write" for m in MODULES}, "users": "none"},
     "production_planning": {"smt_production": "read", "lamp_production": "read", "smt_stock": "write",
-                            "production_needs": "write", "variance": "write", "users": "none"},
+                            "production_needs": "write", "variance": "write", "items": "write", "users": "none"},
     "production_control": {"smt_production": "write", "lamp_production": "write", "smt_stock": "read",
-                           "production_needs": "read", "variance": "write", "users": "none"},
+                           "production_needs": "read", "variance": "write", "items": "read", "users": "none"},
     "smt": {"smt_production": "write", "lamp_production": "read", "smt_stock": "write",
-            "production_needs": "read", "variance": "read", "users": "none"},
+            "production_needs": "read", "variance": "read", "items": "read", "users": "none"},
     "assembly": {"smt_production": "read", "lamp_production": "write", "smt_stock": "read",
-                 "production_needs": "read", "variance": "read", "users": "none"},
+                 "production_needs": "read", "variance": "read", "items": "read", "users": "none"},
 }
 
 
@@ -188,7 +189,15 @@ FIELDS = {
         ("assy_total", "Total Produksi Assy", True), ("smt3", "SMT Shift 3", True),
         ("assy3", "Assy Shift 3", True), ("actual_total_stock", "Actual Total Stock", True),
         ("reason", "Keterangan", False)],
+    "items": [("lane", "Lane", False), ("type", "Type", False), ("ics_no", "ICS No.", False),
+              ("tt", "T/T (detik)", True), ("led_rank", "LED Rank", False), ("tray", "Tray", False)],
 }
+
+
+def compute_item(d: dict) -> dict:
+    tt = num(d.get("tt"))
+    d["cap_h"] = r1(3600 / tt) if tt else 0.0
+    return d
 
 
 def compute_smt_production(d: dict) -> dict:
@@ -240,6 +249,7 @@ DATASETS = {
     "smt-stock": {"module": "smt_stock", "compute": compute_smt_stock, "sort": [("date", -1), ("lane", 1)]},
     "production-needs": {"module": "production_needs", "compute": compute_needs, "sort": [("date", -1), ("lane", 1)]},
     "variance": {"module": "variance", "compute": compute_variance, "sort": [("date", -1), ("lane", 1)]},
+    "items": {"module": "items", "compute": compute_item, "sort": [("lane", 1), ("type", 1)], "no_date": True},
 }
 
 
@@ -429,8 +439,10 @@ def register_crud(dataset: str):
     @api.post(f"/{dataset}")
     async def create_item(body: dict, user: dict = Depends(require_perm(module, "write"))):
         d = normalize(module, body)
-        if not d.get("date") or not d.get("ics_no"):
+        if not d.get("ics_no") or (not cfg.get("no_date") and not d.get("date")):
             raise HTTPException(status_code=400, detail="Tanggal dan ICS No. wajib diisi")
+        if cfg.get("no_date") and await coll.find_one({"ics_no": d["ics_no"], "type": d["type"]}):
+            raise HTTPException(status_code=400, detail="Item dengan ICS No. dan Type ini sudah ada")
         d["created_at"] = datetime.now(timezone.utc).isoformat()
         res = await coll.insert_one(d)
         d["id"] = str(res.inserted_id); d.pop("_id", None)
@@ -619,7 +631,7 @@ async def import_preview(dataset: str, file: UploadFile = File(...), user: dict 
         rows, unknown = map_rows(module, dff)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Gagal membaca file: {e}")
-    invalid = sum(1 for r in rows if not r.get("date") or not r.get("ics_no"))
+    invalid = sum(1 for r in rows if not r.get("ics_no") or (not DATASETS[dataset].get("no_date") and not r.get("date")))
     columns = [k for k, _, _ in FIELDS[module]] + [k for k in rows[0].keys() if rows and k not in [f[0] for f in FIELDS[module]]] if rows else []
     return {"columns": columns, "rows": rows[:100], "total": len(rows), "invalid": invalid, "unknown_columns": unknown}
 
@@ -638,11 +650,12 @@ async def import_confirm(dataset: str, file: UploadFile = File(...), user: dict 
         raise HTTPException(status_code=400, detail=f"Gagal membaca file: {e}")
     now = datetime.now(timezone.utc).isoformat()
     inserted = updated = skipped = 0
+    no_date = DATASETS[dataset].get("no_date")
     for r in rows:
-        if not r.get("date") or not r.get("ics_no"):
+        if not r.get("ics_no") or (not no_date and not r.get("date")):
             skipped += 1
             continue
-        key = {"date": r["date"], "ics_no": r["ics_no"]}
+        key = {"ics_no": r["ics_no"], "type": r["type"]} if no_date else {"date": r["date"], "ics_no": r["ics_no"]}
         existing = await db[module].find_one(key)
         if existing:
             r["updated_at"] = now
@@ -734,12 +747,34 @@ async def seed_from_excel():
     logger.info("Seeded %d items from DATA STOCK.xlsx", len(rows))
 
 
+async def seed_items():
+    if await db.items.count_documents({}) > 0:
+        return
+    path = ROOT_DIR / "seed" / "data_stock.json"
+    if not path.exists():
+        return
+    seen, docs = set(), []
+    now = datetime.now(timezone.utc).isoformat()
+    for r in json.loads(path.read_text()):
+        key = (r["ics_no"], r["type"])
+        if key in seen or not r["ics_no"].strip("0"):
+            continue
+        seen.add(key)
+        d = normalize("items", r)
+        d["created_at"] = now
+        docs.append(d)
+    await db.items.insert_many(docs)
+    await db.items.create_index([("ics_no", 1), ("type", 1)])
+    logger.info("Seeded %d master items", len(docs))
+
+
 @app.on_event("startup")
 async def startup():
     await db.users.create_index("email", unique=True)
     await seed_admin()
     await seed_demo_users()
     await seed_from_excel()
+    await seed_items()
 
 
 @app.on_event("shutdown")

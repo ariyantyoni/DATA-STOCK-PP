@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import {
   LayoutDashboard, Cpu, Lightbulb, Boxes, ClipboardList, Scale,
-  Users as UsersIcon, LogOut, Factory, Menu, X,
+  Users as UsersIcon, LogOut, Factory, Menu, X, Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { canRead } from "@/lib/api";
@@ -15,6 +15,7 @@ const NAV = [
   { to: "/smt-stock", label: "Stock SMT", icon: Boxes, module: "smt_stock" },
   { to: "/production-needs", label: "Kebutuhan vs Stock", icon: ClipboardList, module: "production_needs" },
   { to: "/variance", label: "Variance Stock", icon: Scale, module: "variance" },
+  { to: "/items", label: "Master Item", icon: Package, module: "items" },
   { to: "/users", label: "Manajemen User", icon: UsersIcon, module: "users" },
 ];
 

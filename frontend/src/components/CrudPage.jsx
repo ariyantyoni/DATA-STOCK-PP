@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 
 export default function CrudPage({
   title, subtitle, icon: Icon, endpoint, dataset, module,
-  columns, formFields, filters, options, refreshOptions,
+  columns, formFields, filters, options, refreshOptions, itemPicker = true,
 }) {
   const { user } = useAuth();
   const writable = canWrite(user, module);
@@ -174,7 +174,7 @@ export default function CrudPage({
 
       <RecordDialog open={dialogOpen} onOpenChange={setDialogOpen}
         title={editing ? `Edit ${title}` : `Tambah ${title}`} fields={formFields}
-        initial={editing} onSubmit={onSubmit} submitting={saving} />
+        initial={editing} onSubmit={onSubmit} submitting={saving} itemPicker={itemPicker} />
 
       <ImportDialog open={importOpen} onOpenChange={setImportOpen} dataset={dataset} title={title} onDone={() => { fetchData(); refreshOptions?.(); }} />
 

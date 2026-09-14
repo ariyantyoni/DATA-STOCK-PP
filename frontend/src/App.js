@@ -11,6 +11,7 @@ import SMTStock from "@/pages/SMTStock";
 import ProductionNeeds from "@/pages/ProductionNeeds";
 import Variance from "@/pages/Variance";
 import Users from "@/pages/Users";
+import MasterItems from "@/pages/MasterItems";
 import { Loader2 } from "lucide-react";
 import { canRead } from "@/lib/api";
 
@@ -58,6 +59,7 @@ function App() {
               <Route path="smt-stock" element={<Guard module="smt_stock"><SMTStock /></Guard>} />
               <Route path="production-needs" element={<Guard module="production_needs"><ProductionNeeds /></Guard>} />
               <Route path="variance" element={<Guard module="variance"><Variance /></Guard>} />
+              <Route path="items" element={<Guard module="items"><MasterItems /></Guard>} />
               <Route path="users" element={<Guard module="users"><Users /></Guard>} />
             </Route>
           </Routes>

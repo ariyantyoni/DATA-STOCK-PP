@@ -6,15 +6,23 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import api from "@/lib/api";
+import ItemPicker from "@/components/ItemPicker";
 import { History } from "lucide-react";
 
 const PREV_KEYS = ["stock_ok_prev", "total_stock_prev"];
+const ITEM_KEYS = ["lane", "type", "ics_no", "tt", "led_rank", "tray"];
 
-export default function RecordDialog({ open, onOpenChange, title, fields, initial, onSubmit, submitting }) {
+export default function RecordDialog({ open, onOpenChange, title, fields, initial, onSubmit, submitting, itemPicker }) {
   const [form, setForm] = useState({});
   const [prev, setPrev] = useState(null);
   const touched = useRef(new Set());
   const hasPrev = fields.some((f) => PREV_KEYS.includes(f.key));
+
+  const pickItem = (it) => setForm((p) => {
+    const n = { ...p };
+    ITEM_KEYS.forEach((k) => { if (k in n) n[k] = it[k] ?? ""; });
+    return n;
+  });
 
   useEffect(() => {
     if (open) {
@@ -69,6 +77,12 @@ export default function RecordDialog({ open, onOpenChange, title, fields, initia
           </p>
         )}
         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4 py-2">
+          {itemPicker && (
+            <div className="col-span-2 space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Master Item (isi Lane/Type/ICS otomatis)</Label>
+              <ItemPicker onPick={pickItem} current={form.ics_no ? { ics_no: form.ics_no, type: form.type } : null} />
+            </div>
+          )}
           {fields.map((f) => (
             <div key={f.key} className={f.full ? "col-span-2 space-y-1.5" : "space-y-1.5"}>
               <Label className="text-xs text-muted-foreground">{f.label}</Label>
