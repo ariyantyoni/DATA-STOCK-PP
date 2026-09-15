@@ -71,7 +71,7 @@ export default function RecordDialog({ open, onOpenChange, title, fields, initia
           <DialogDescription className="text-muted-foreground">Lengkapi data berikut. Nilai perhitungan otomatis akan dihitung oleh sistem.</DialogDescription>
         </DialogHeader>
         {hasPrev && !initial && prev && (
-          <p data-testid="prev-values-hint" className={`text-xs font-mono-data flex items-center gap-1.5 ${prev.found ? "text-emerald-400" : "text-amber-400"}`}>
+          <p data-testid="prev-values-hint" className={`text-xs font-mono-data flex items-center gap-1.5 ${prev.found ? "text-emerald-600" : "text-amber-600"}`}>
             <History className="w-3.5 h-3.5" />
             {prev.found ? `Nilai kemarin diambil dari Stock SMT ${prev.source_date} (OK ${prev.stock_ok_prev}, Total ${prev.total_stock_prev})` : "Tidak ada data Stock SMT sebelum tanggal ini — isi nilai kemarin manual"}
           </p>

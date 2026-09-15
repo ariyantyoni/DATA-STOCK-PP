@@ -92,9 +92,9 @@ export default function CrudPage({
     if (col.type === "status") return <StatusBadge status={v} testId={`row-status-${row.id}`} />;
     if (col.type === "number") return <span className="font-mono-data">{fmtNum(v)}</span>;
     if (col.type === "percent")
-      return <span className={cn("font-mono-data", col.tone && (Number(v) >= 100 ? "text-emerald-400" : Number(v) >= 85 ? "text-amber-400" : "text-red-400"))}>{fmtPct(v)}</span>;
+      return <span className={cn("font-mono-data", col.tone && (Number(v) >= 100 ? "text-emerald-600" : Number(v) >= 85 ? "text-amber-600" : "text-red-600"))}>{fmtPct(v)}</span>;
     if (col.type === "signed")
-      return <span className={cn("font-mono-data", Number(v) < 0 ? "text-red-400" : Number(v) > 0 ? "text-emerald-400" : "text-muted-foreground")}>{Number(v) > 0 ? "+" : ""}{fmtNum(v)}</span>;
+      return <span className={cn("font-mono-data", Number(v) < 0 ? "text-red-600" : Number(v) > 0 ? "text-emerald-600" : "text-muted-foreground")}>{Number(v) > 0 ? "+" : ""}{fmtNum(v)}</span>;
     if (col.type === "strong") return <span className="font-mono-data font-semibold text-foreground">{fmtNum(v)}</span>;
     if (col.mono) return <span className="font-mono-data text-foreground">{v ?? "-"}</span>;
     return <span>{v ?? "-"}</span>;
@@ -135,9 +135,9 @@ export default function CrudPage({
             <thead>
               <tr className="bg-secondary/80 border-b border-border">
                 {columns.map((c) => (
-                  <th key={c.key} className={cn("px-4 py-3 text-left font-mono-data text-[11px] uppercase tracking-wider text-muted-foreground whitespace-nowrap", c.align === "right" && "text-right")}>{c.label}</th>
+                  <th key={c.key} className={cn("px-4 py-3 text-left font-mono-data text-[11px] uppercase tracking-wider text-muted-foreground whitespace-nowrap border-r border-border last:border-r-0", c.align === "right" && "text-right")}>{c.label}</th>
                 ))}
-                {writable && <th className="px-4 py-3 text-right font-mono-data text-[11px] uppercase tracking-wider text-muted-foreground">Aksi</th>}
+                {writable && <th className="px-4 py-3 text-right font-mono-data text-[11px] uppercase tracking-wider text-muted-foreground border-l border-border">Aksi</th>}
               </tr>
             </thead>
             <tbody>
@@ -147,17 +147,17 @@ export default function CrudPage({
                 <tr><td colSpan={columns.length + 1} className="px-4 py-16 text-center text-muted-foreground text-sm">Tidak ada data. {writable && "Tambah data atau import dari Excel."}</td></tr>
               ) : (
                 rows.map((row, i) => (
-                  <tr key={row.id} data-testid={`data-row-${i}`} className="border-b border-border/50 hover:bg-secondary/40 transition-colors">
+                  <tr key={row.id} data-testid={`data-row-${i}`} className="border-b border-border/70 hover:bg-secondary/60 transition-colors">
                     {columns.map((c) => (
-                      <td key={c.key} className={cn("px-4 py-2.5 whitespace-nowrap", c.align === "right" && "text-right")}>{renderCell(c, row)}</td>
+                      <td key={c.key} className={cn("px-4 py-2.5 whitespace-nowrap border-r border-border/70 last:border-r-0", c.align === "right" && "text-right")}>{renderCell(c, row)}</td>
                     ))}
                     {writable && (
-                      <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                      <td className="px-4 py-2.5 text-right whitespace-nowrap border-l border-border/70">
                         <div className="inline-flex gap-1">
                           <button onClick={() => { setEditing(row); setDialogOpen(true); }} data-testid={`edit-${i}`}
                             className="w-8 h-8 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
                           <button onClick={() => setDeleteId(row.id)} data-testid={`delete-${i}`}
-                            className="w-8 h-8 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-red-400 hover:border-red-500/40 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                            className="w-8 h-8 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-red-600 hover:border-red-500/40 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                         </div>
                       </td>
                     )}

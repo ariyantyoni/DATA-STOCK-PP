@@ -21,11 +21,11 @@ const NAV = [
 
 const ROLE_BADGE = {
   admin: "bg-primary/10 text-primary border-primary/30",
-  management: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
-  production_planning: "bg-blue-500/10 text-blue-400 border-blue-500/30",
-  production_control: "bg-amber-500/10 text-amber-400 border-amber-500/30",
-  smt: "bg-cyan-500/10 text-cyan-400 border-cyan-500/30",
-  assembly: "bg-orange-500/10 text-orange-400 border-orange-500/30",
+  management: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30",
+  production_planning: "bg-blue-500/10 text-blue-600 border-blue-500/30",
+  production_control: "bg-amber-500/10 text-amber-600 border-amber-500/30",
+  smt: "bg-cyan-500/10 text-cyan-600 border-cyan-500/30",
+  assembly: "bg-orange-500/10 text-orange-600 border-orange-500/30",
 };
 
 export default function Layout() {
@@ -82,7 +82,7 @@ export default function Layout() {
   return (
     <div className="min-h-screen flex bg-background">
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r border-border bg-card/60 backdrop-blur-sm fixed inset-y-0 left-0 z-40">
+      <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r border-border bg-slate-50 fixed inset-y-0 left-0 z-40">
         {SidebarInner}
       </aside>
 
@@ -90,7 +90,7 @@ export default function Layout() {
       {open && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
           <div className="w-64 bg-card border-r border-border">{SidebarInner}</div>
-          <div className="flex-1 bg-black/60" onClick={() => setOpen(false)} />
+          <div className="flex-1 bg-black/30" onClick={() => setOpen(false)} />
         </div>
       )}
 
@@ -112,7 +112,7 @@ export default function Layout() {
             <div className="text-right hidden sm:block">
               <p className="text-sm font-medium text-foreground leading-tight" data-testid="header-user-name">{user?.name}</p>
               <span
-                className={cn("inline-block text-[10px] font-mono-data px-2 py-0.5 rounded-full border mt-0.5", ROLE_BADGE[user?.role] || "bg-slate-500/10 text-slate-400 border-slate-500/30")}
+                className={cn("inline-block text-[10px] font-mono-data px-2 py-0.5 rounded-full border mt-0.5", ROLE_BADGE[user?.role] || "bg-slate-500/10 text-slate-600 border-slate-500/30")}
                 data-testid="header-user-role"
               >
                 {user?.role_label}
@@ -121,7 +121,7 @@ export default function Layout() {
             <button
               onClick={handleLogout}
               data-testid="logout-button"
-              className="w-9 h-9 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-red-400 hover:border-red-500/40 transition-colors"
+              className="w-9 h-9 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-red-600 hover:border-red-500/40 transition-colors"
               title="Keluar"
             >
               <LogOut className="w-4 h-4" />

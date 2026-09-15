@@ -94,10 +94,10 @@ export default function ImportDialog({ open, onOpenChange, dataset, title, onDon
           <div className="space-y-3">
             <p className="text-xs font-mono-data text-muted-foreground">
               {file?.name} · {preview.total} baris terdeteksi · menampilkan {preview.rows.length}
-              {preview.invalid > 0 && <span className="text-red-400"> · {preview.invalid} baris tanpa Tanggal/ICS No. akan dilewati</span>}
+              {preview.invalid > 0 && <span className="text-red-600"> · {preview.invalid} baris tanpa Tanggal/ICS No. akan dilewati</span>}
             </p>
             {preview.unknown_columns?.length > 0 && (
-              <p className="text-xs text-amber-400" data-testid="import-unknown-columns">Kolom tidak dikenal (diabaikan): {preview.unknown_columns.join(", ")}</p>
+              <p className="text-xs text-amber-600" data-testid="import-unknown-columns">Kolom tidak dikenal (diabaikan): {preview.unknown_columns.join(", ")}</p>
             )}
             <div className="border border-border rounded-lg overflow-auto max-h-[45vh]">
               <table className="w-full text-xs">

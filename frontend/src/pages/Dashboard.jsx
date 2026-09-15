@@ -100,21 +100,21 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <KpiCard testId="kpi-smt" icon={Cpu} label="Hasil Produksi SMT" value={fmtNum(k.smt_total)}
-          sub={`${fmtNum(k.smt_items)} item · total 3 shift`} accent="text-cyan-400" />
+          sub={`${fmtNum(k.smt_items)} item · total 3 shift`} accent="text-cyan-600" />
         <KpiCard testId="kpi-assy" icon={Lightbulb} label="Actual Produksi ASSY" value={fmtNum(k.assy_total)}
           sub={`Plan ${fmtNum(k.plan_assy)} · Achv ${fmtPct(k.assy_achievement)}`}
-          accent={k.assy_achievement >= 100 ? "text-emerald-400" : "text-orange-400"} />
+          accent={k.assy_achievement >= 100 ? "text-emerald-600" : "text-orange-600"} />
         <KpiCard testId="kpi-shortage" icon={AlertTriangle} label="Item Shortage (BLC < 0)" value={fmtNum(k.shortage_count)}
-          sub={`dari ${fmtNum(k.needs_items)} item kebutuhan`} accent={k.shortage_count > 0 ? "text-red-400" : "text-emerald-400"} />
+          sub={`dari ${fmtNum(k.needs_items)} item kebutuhan`} accent={k.shortage_count > 0 ? "text-red-600" : "text-emerald-600"} />
         <KpiCard testId="kpi-variance" icon={Scale} label="Item Variance" value={fmtNum(k.variance_count)}
-          sub={`Total selisih ${k.variance_sum > 0 ? "+" : ""}${fmtNum(k.variance_sum)} pcs`} accent={k.variance_count > 0 ? "text-amber-400" : "text-emerald-400"} />
+          sub={`Total selisih ${k.variance_sum > 0 ? "+" : ""}${fmtNum(k.variance_sum)} pcs`} accent={k.variance_count > 0 ? "text-amber-600" : "text-emerald-600"} />
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <KpiCard testId="kpi-stock-ok" icon={Boxes} label="Stock OK SMT" value={fmtNum(k.stock_ok)} sub={k.stock_date ? `per ${k.stock_date}` : ""} accent="text-emerald-400" />
+        <KpiCard testId="kpi-stock-ok" icon={Boxes} label="Stock OK SMT" value={fmtNum(k.stock_ok)} sub={k.stock_date ? `per ${k.stock_date}` : ""} accent="text-emerald-600" />
         <KpiCard testId="kpi-stock-total" icon={Layers} label="Total Stock SMT" value={fmtNum(k.stock_total)} sub={`${fmtNum(k.stock_items)} item`} accent="text-primary" />
-        <KpiCard testId="kpi-stock-wip" icon={Layers} label="Stock WIP (belum OK)" value={fmtNum(k.stock_total - k.stock_ok)} accent="text-amber-400" />
-        <KpiCard testId="kpi-plan" icon={Lightbulb} label="Plan Assy" value={fmtNum(k.plan_assy)} accent="text-orange-400" />
+        <KpiCard testId="kpi-stock-wip" icon={Layers} label="Stock WIP (belum OK)" value={fmtNum(k.stock_total - k.stock_ok)} accent="text-amber-600" />
+        <KpiCard testId="kpi-plan" icon={Lightbulb} label="Plan Assy" value={fmtNum(k.plan_assy)} accent="text-orange-600" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -127,7 +127,7 @@ export default function Dashboard() {
                   <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="date" tick={axis} tickFormatter={(d) => d?.slice(5)} />
               <YAxis tick={axis} />
               <Tooltip content={<TooltipBox />} />
@@ -159,13 +159,13 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Panel icon={Cpu} title="Hasil SMT per Lane (per Shift)" tone="text-cyan-400" className="lg:col-span-2">
+        <Panel icon={Cpu} title="Hasil SMT per Lane (per Shift)" tone="text-cyan-600" className="lg:col-span-2">
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={data.smt_by_lane}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="lane" tick={axis} />
               <YAxis tick={axis} />
-              <Tooltip content={<TooltipBox />} cursor={{ fill: "#1e293b40" }} />
+              <Tooltip content={<TooltipBox />} cursor={{ fill: "#e2e8f040" }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar dataKey="smt1" name="Shift 1" stackId="a" fill="#38bdf8" />
               <Bar dataKey="smt2" name="Shift 2" stackId="a" fill="#0ea5e9" />
@@ -175,7 +175,7 @@ export default function Dashboard() {
         </Panel>
 
         <div className="space-y-4">
-          <Panel icon={AlertTriangle} title="Top Shortage (BLC)" tone="text-red-400">
+          <Panel icon={AlertTriangle} title="Top Shortage (BLC)" tone="text-red-600">
             {data.top_shortage.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4 text-center">Tidak ada item shortage</p>
             ) : (
@@ -186,13 +186,13 @@ export default function Dashboard() {
                       <p className="text-sm text-foreground">{n.type}</p>
                       <p className="text-[11px] font-mono-data text-muted-foreground">{n.ics_no} · Plan {fmtNum(n.plan_assy)} · Stock {fmtNum(n.stock_ok_prev)}</p>
                     </div>
-                    <span className="font-mono-data text-sm text-red-400">{fmtNum(n.blc)}</span>
+                    <span className="font-mono-data text-sm text-red-600">{fmtNum(n.blc)}</span>
                   </div>
                 ))}
               </div>
             )}
           </Panel>
-          <Panel icon={Scale} title="Top Variance" tone="text-amber-400">
+          <Panel icon={Scale} title="Top Variance" tone="text-amber-600">
             {data.top_variance.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4 text-center">Tidak ada variance</p>
             ) : (
@@ -203,7 +203,7 @@ export default function Dashboard() {
                       <p className="text-sm text-foreground">{v.type}</p>
                       <p className="text-[11px] font-mono-data text-muted-foreground">{v.ics_no} · Sistem {fmtNum(v.stock_sistem)} · Actual {fmtNum(v.actual_total_stock)}</p>
                     </div>
-                    <span className={cn("font-mono-data text-sm", v.variance < 0 ? "text-red-400" : "text-emerald-400")}>{v.variance > 0 ? "+" : ""}{fmtNum(v.variance)}</span>
+                    <span className={cn("font-mono-data text-sm", v.variance < 0 ? "text-red-600" : "text-emerald-600")}>{v.variance > 0 ? "+" : ""}{fmtNum(v.variance)}</span>
                   </div>
                 ))}
               </div>

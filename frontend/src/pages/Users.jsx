@@ -13,13 +13,13 @@ import { cn } from "@/lib/utils";
 
 const ROLE_BADGE = {
   admin: "bg-primary/10 text-primary border-primary/30",
-  management: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
-  production_planning: "bg-blue-500/10 text-blue-400 border-blue-500/30",
-  production_control: "bg-amber-500/10 text-amber-400 border-amber-500/30",
-  smt: "bg-cyan-500/10 text-cyan-400 border-cyan-500/30",
-  assembly: "bg-orange-500/10 text-orange-400 border-orange-500/30",
+  management: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30",
+  production_planning: "bg-blue-500/10 text-blue-600 border-blue-500/30",
+  production_control: "bg-amber-500/10 text-amber-600 border-amber-500/30",
+  smt: "bg-cyan-500/10 text-cyan-600 border-cyan-500/30",
+  assembly: "bg-orange-500/10 text-orange-600 border-orange-500/30",
 };
-const LEVEL_DOT = { none: "bg-slate-600", read: "bg-sky-400", write: "bg-emerald-400" };
+const LEVEL_DOT = { none: "bg-slate-600", read: "bg-sky-500", write: "bg-emerald-500" };
 const SHORT = { smt_production: "SMT", lamp_production: "ASSY", smt_stock: "STOCK", production_needs: "KEBUTUHAN", variance: "VARIANCE", items: "ITEM", users: "USER" };
 
 export default function Users() {
@@ -111,7 +111,7 @@ export default function Users() {
                   <td className="px-4 py-3 font-mono-data text-foreground" data-testid={`user-username-${i}`}>{u.username}</td>
                   <td className="px-4 py-3 font-mono-data text-muted-foreground">{u.email || "-"}</td>
                   <td className="px-4 py-3">
-                    <span className={`inline-block text-xs font-mono-data px-2 py-0.5 rounded-full border whitespace-nowrap ${ROLE_BADGE[u.role] || "bg-slate-500/10 text-slate-400 border-slate-500/30"}`}>{u.role_label}</span>
+                    <span className={`inline-block text-xs font-mono-data px-2 py-0.5 rounded-full border whitespace-nowrap ${ROLE_BADGE[u.role] || "bg-slate-500/10 text-slate-600 border-slate-500/30"}`}>{u.role_label}</span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1.5" data-testid={`user-perms-${i}`}>
@@ -133,7 +133,7 @@ export default function Users() {
                         className="w-8 h-8 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
                       {!isMain && u.id !== me.id && (
                         <button onClick={() => setDeleteId(u.id)} data-testid={`delete-user-${i}`}
-                          className="w-8 h-8 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-red-400 hover:border-red-500/40 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                          className="w-8 h-8 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-red-600 hover:border-red-500/40 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                       )}
                     </div>
                   </td>

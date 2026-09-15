@@ -7,9 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 
 const LEVEL_STYLE = {
-  none: "bg-slate-500/15 text-slate-300 border-slate-500/40",
-  read: "bg-sky-500/15 text-sky-300 border-sky-500/40",
-  write: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
+  none: "bg-slate-500/15 text-slate-700 border-slate-500/40",
+  read: "bg-sky-500/15 text-sky-700 border-sky-500/40",
+  write: "bg-emerald-500/15 text-emerald-700 border-emerald-500/40",
 };
 
 export default function UserDialog({ open, onOpenChange, editing, roles, modules, levels, onSubmit, saving }) {
@@ -71,7 +71,7 @@ export default function UserDialog({ open, onOpenChange, editing, roles, modules
                 <div key={m.key} className="flex items-center justify-between gap-3 px-3 py-2">
                   <div>
                     <p className="text-sm">{m.label}</p>
-                    {form.permissions[m.key] && <p className="text-[10px] text-amber-400 font-mono-data">override (default: {levels.find((l) => l.value === roleDefaults[m.key])?.label || "Tidak ada"})</p>}
+                    {form.permissions[m.key] && <p className="text-[10px] text-amber-600 font-mono-data">override (default: {levels.find((l) => l.value === roleDefaults[m.key])?.label || "Tidak ada"})</p>}
                   </div>
                   <div className="inline-flex rounded-md border border-border overflow-hidden">
                     {levels.map((l) => (

@@ -16,25 +16,25 @@ body {
 
 @layer base {
     :root {
-        --background: 222 47% 5%;
-        --foreground: 210 40% 98%;
-        --card: 222 44% 9%;
-        --card-foreground: 210 40% 98%;
-        --popover: 222 47% 8%;
-        --popover-foreground: 210 40% 98%;
-        --primary: 199 89% 58%;
-        --primary-foreground: 222 47% 6%;
-        --secondary: 217 33% 15%;
-        --secondary-foreground: 210 40% 98%;
-        --muted: 217 33% 15%;
-        --muted-foreground: 215 20% 62%;
-        --accent: 217 33% 17%;
-        --accent-foreground: 210 40% 98%;
+        --background: 0 0% 100%;
+        --foreground: 222 47% 11%;
+        --card: 0 0% 100%;
+        --card-foreground: 222 47% 11%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 222 47% 11%;
+        --primary: 199 89% 42%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 210 40% 96%;
+        --secondary-foreground: 222 47% 11%;
+        --muted: 210 40% 96%;
+        --muted-foreground: 215 16% 42%;
+        --accent: 210 40% 94%;
+        --accent-foreground: 222 47% 11%;
         --destructive: 0 84% 60%;
-        --destructive-foreground: 210 40% 98%;
-        --border: 215 28% 17%;
-        --input: 215 28% 17%;
-        --ring: 199 89% 58%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 214 32% 88%;
+        --input: 214 32% 88%;
+        --ring: 199 89% 42%;
         --chart-1: 199 89% 58%;
         --chart-2: 160 84% 39%;
         --chart-3: 38 92% 50%;
@@ -48,16 +48,13 @@ body {
     * { @apply border-border; }
     body {
         @apply bg-background text-foreground;
-        background-image: radial-gradient(circle at 15% 0%, rgba(56, 189, 248, 0.06), transparent 40%),
-                          radial-gradient(circle at 85% 100%, rgba(249, 115, 22, 0.05), transparent 40%);
-        background-attachment: fixed;
     }
 }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: hsl(222 47% 7%); }
-::-webkit-scrollbar-thumb { background: hsl(217 33% 22%); border-radius: 5px; }
-::-webkit-scrollbar-thumb:hover { background: hsl(217 33% 30%); }
+::-webkit-scrollbar-track { background: hsl(210 40% 97%); }
+::-webkit-scrollbar-thumb { background: hsl(214 32% 82%); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(214 20% 70%); }
 
 @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 .pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
