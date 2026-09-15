@@ -6,6 +6,7 @@ export default function MasterItems() {
   const { options, refresh } = useMetaOptions();
   const columns = [
     { key: "lane", label: "Lane", mono: true },
+    { key: "product", label: "Product" },
     { key: "type", label: "Type" },
     { key: "ics_no", label: "ICS No.", mono: true },
     { key: "tt", label: "T/T (detik)", type: "number", align: "right" },
@@ -15,6 +16,7 @@ export default function MasterItems() {
   ];
   const formFields = [
     { key: "lane", label: "Lane", type: "text", required: true },
+    { key: "product", label: "Product", type: "select", options: ["REGULER", "SPO"] },
     { key: "type", label: "Type", type: "text", required: true },
     { key: "ics_no", label: "ICS No.", type: "text", required: true },
     { key: "tt", label: "T/T (detik) — CAP/H = 3600 / T/T", type: "number" },

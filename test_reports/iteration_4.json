@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 4 verifies the merged Produksi SMT & ASSY module (LAMP ASSY removed, single endpoint /api/smt-production). Backend: 12/12 pytest tests pass in /app/backend/tests/test_smt_assy.py covering CRUD+formulas (cap_h=120, total_smt=900, achv=90 PROSES; act_s2=300 -> total_smt=1000, achv=100, SELESAI; delete OK), seed list (>=86 rows with 2026-09-12 & 2026-09-15), filters (date range, lane, ics_no, status=BELUM MULAI, search), /api/lamp-production returns 404 (removed), CSV template has exact headers TANGGAL,LANE,PRODUCT,TYPE,ICS NO,T/T,PLANING,ACT S3,ACT S1,ACT S2,PLAN ASSY S3,PLAN ASSY S1,PLAN ASSY S2 (derived cols excluded), import preview of /app/backend/seed/smt_production.csv returns total=86 invalid=1 unknown_columns=[], idempotent confirm returns inserted=0 updated=85 skipped=1 and doc count unchanged, ICS NO '634912900' zero-padded to '0634912900' on import, dashboard summary kpi has smt_total/smt_plan/smt_achievement/plan_assy/balance/smt_items, smt_trend rows have plan/actual/plan_assy, smt_by_lane rows have act_s3/act_s1/act_s2, /api/items rows include product field with REGULER appearing. Frontend: admin login OK, sidebar has nav-smt-production (nav-lamp-production absent), page shows all required columns, add dialog exposes item-picker-trigger and every field-* testid (product,planing,act_s3/1/2,plan_assy_s3/1/2,tt,date,lane,type,ics_no), submitting tt=30/planing=1000/300+400+200/250+250+250 creates a row whose text contains Total SMT 900 and Balance 150, delete flow removed the row, /lamp-production route does not crash (react-router 'No routes matched' warning, empty main area — acceptable), dashboard kpi-smt and kpi-assy render with no error DOM. Cleaned all test data (ics_no 8888888888 & 9999999999 & 0634912900); seed 86 rows preserved.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": [
+    {"screen": "Header", "issues": ["Header subtitle still reads 'Automotive Manufacturing · SMT & LAMP ASSY' — matches merged naming, but consider aligning with new module label 'Produksi SMT & ASSY' for consistency (cosmetic)."]}
+  ]},
+  "test_report_links": [
+    "/app/backend/tests/test_smt_assy.py",
+    "/app/test_reports/pytest/smt_assy_results.xml"
+  ],
+  "action_items": [
+    "Legacy /app/backend/tests/backend_test.py is stale: it still POSTs /api/lamp-production (removed), uses old SMT payload (led_rank/smt1/smt2/smt3 instead of act/plan_assy), and sends {'email',...} to /api/auth/login which expects 'username'. Main agent should either delete it or migrate it — kept out of the CI-relevant path for now."
+  ],
+  "critical_code_review_comments": [
+    "server.py normalize() picks the DATASETS entry via a list-comprehension over the module key — works but O(N) per row; a reverse map would be cleaner (non-blocking).",
+    "seed_from_excel v3 hardcodes SEED_VERSION=3 and unconditionally drops db.lamp_production and re-inserts smt_production every upgrade path — correct for one-shot migration; make sure production DBs have already been bumped.",
+    "import_preview returns d['columns'] built with a truthy short-circuit that returns [] when rows is empty — minor: expression order relies on 'rows' being non-empty for the second list to be evaluated, safe due to Python and-precedence but fragile. Consider rewriting explicitly.",
+    "server.py is now ~850 lines — over the 700-line guideline. Splitting into auth/, crud/, import/, dashboard/, seed/ modules recommended (non-blocking).",
+    "compute_smt_production stores cap_h as int via round() while compute_item uses r1() (2 decimals). Two different rounding rules for the same derived field across collections — align if items UI displays cap_h from either source."
+  ],
+  "updated_files": ["/app/backend/tests/test_smt_assy.py", "/app/test_reports/iteration_4.json"],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% of tested SMT+ASSY flows"},
+  "test_credentials": "admin / admin123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "No new seed data; test rows (ics_no 8888888888, 9999999999, 0634912900) created and deleted during runs. Original 86 seed rows unchanged.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Authoritative regression files: /app/backend/tests/test_smt_assy.py (SMT+ASSY merger), /app/backend/tests/test_users_mgmt.py (user mgmt). /app/backend/tests/backend_test.py is stale (email-based login + LAMP endpoint) and should not be run until migrated. Public backend URL comes from /app/frontend/.env REACT_APP_BACKEND_URL. Login body is {'username','password'}. Import upsert key = (date, ics_no, type)."
+}

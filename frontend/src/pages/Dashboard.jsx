@@ -99,11 +99,12 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <KpiCard testId="kpi-smt" icon={Cpu} label="Hasil Produksi SMT" value={fmtNum(k.smt_total)}
-          sub={`${fmtNum(k.smt_items)} item · total 3 shift`} accent="text-cyan-600" />
-        <KpiCard testId="kpi-assy" icon={Lightbulb} label="Actual Produksi ASSY" value={fmtNum(k.assy_total)}
-          sub={`Plan ${fmtNum(k.plan_assy)} · Achv ${fmtPct(k.assy_achievement)}`}
-          accent={k.assy_achievement >= 100 ? "text-emerald-600" : "text-orange-600"} />
+        <KpiCard testId="kpi-smt" icon={Cpu} label="Total Produksi SMT" value={fmtNum(k.smt_total)}
+          sub={`Planing ${fmtNum(k.smt_plan)} · Achv ${fmtPct(k.smt_achievement)}`}
+          accent={k.smt_achievement >= 100 ? "text-emerald-600" : "text-cyan-600"} />
+        <KpiCard testId="kpi-assy" icon={Lightbulb} label="Total Plan Assy" value={fmtNum(k.plan_assy)}
+          sub={`Balance ${k.balance > 0 ? "+" : ""}${fmtNum(k.balance)} pcs (SMT − Plan)`}
+          accent={k.balance >= 0 ? "text-emerald-600" : "text-red-600"} />
         <KpiCard testId="kpi-shortage" icon={AlertTriangle} label="Item Shortage (BLC < 0)" value={fmtNum(k.shortage_count)}
           sub={`dari ${fmtNum(k.needs_items)} item kebutuhan`} accent={k.shortage_count > 0 ? "text-red-600" : "text-emerald-600"} />
         <KpiCard testId="kpi-variance" icon={Scale} label="Item Variance" value={fmtNum(k.variance_count)}
@@ -114,13 +115,13 @@ export default function Dashboard() {
         <KpiCard testId="kpi-stock-ok" icon={Boxes} label="Stock OK SMT" value={fmtNum(k.stock_ok)} sub={k.stock_date ? `per ${k.stock_date}` : ""} accent="text-emerald-600" />
         <KpiCard testId="kpi-stock-total" icon={Layers} label="Total Stock SMT" value={fmtNum(k.stock_total)} sub={`${fmtNum(k.stock_items)} item`} accent="text-primary" />
         <KpiCard testId="kpi-stock-wip" icon={Layers} label="Stock WIP (belum OK)" value={fmtNum(k.stock_total - k.stock_ok)} accent="text-amber-600" />
-        <KpiCard testId="kpi-plan" icon={Lightbulb} label="Plan Assy" value={fmtNum(k.plan_assy)} accent="text-orange-600" />
+        <KpiCard testId="kpi-plan" icon={Lightbulb} label="Item Produksi" value={fmtNum(k.smt_items)} sub="baris SMT & ASSY" accent="text-orange-600" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Panel icon={TrendingUp} title="Trend Produksi ASSY (Plan vs Actual)" className="lg:col-span-2">
+        <Panel icon={TrendingUp} title="Trend Produksi SMT (Planing vs Actual vs Plan Assy)" className="lg:col-span-2">
           <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={data.assy_trend}>
+            <AreaChart data={data.smt_trend}>
               <defs>
                 <linearGradient id="gActual" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#f97316" stopOpacity={0.4} />
@@ -132,8 +133,9 @@ export default function Dashboard() {
               <YAxis tick={axis} />
               <Tooltip content={<TooltipBox />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Area type="monotone" dataKey="actual" name="Actual Assy" stroke="#f97316" fill="url(#gActual)" strokeWidth={2} />
-              <Area type="monotone" dataKey="plan" name="Plan Assy" stroke="#f59e0b" fill="none" strokeWidth={2} strokeDasharray="4 4" />
+              <Area type="monotone" dataKey="actual" name="Total SMT" stroke="#0ea5e9" fill="url(#gActual)" strokeWidth={2} />
+              <Area type="monotone" dataKey="plan" name="Planing" stroke="#f59e0b" fill="none" strokeWidth={2} strokeDasharray="4 4" />
+              <Area type="monotone" dataKey="plan_assy" name="Total Plan Assy" stroke="#f97316" fill="none" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
         </Panel>
@@ -167,9 +169,9 @@ export default function Dashboard() {
               <YAxis tick={axis} />
               <Tooltip content={<TooltipBox />} cursor={{ fill: "#e2e8f040" }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="smt1" name="Shift 1" stackId="a" fill="#38bdf8" />
-              <Bar dataKey="smt2" name="Shift 2" stackId="a" fill="#0ea5e9" />
-              <Bar dataKey="smt3" name="Shift 3" stackId="a" fill="#0369a1" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="act_s3" name="Shift 3" stackId="a" fill="#0369a1" />
+              <Bar dataKey="act_s1" name="Shift 1" stackId="a" fill="#38bdf8" />
+              <Bar dataKey="act_s2" name="Shift 2" stackId="a" fill="#0ea5e9" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </Panel>

@@ -48,8 +48,7 @@ ROLE_LABELS = {
 }
 
 MODULES = {
-    "smt_production": "Produksi SMT",
-    "lamp_production": "Produksi LAMP ASSY",
+    "smt_production": "Produksi SMT & ASSY",
     "smt_stock": "Stock SMT",
     "production_needs": "Kebutuhan vs Stock",
     "variance": "Variance Stock",
@@ -62,13 +61,13 @@ LEVEL_LABELS = {"none": "Tidak ada", "read": "Lihat", "write": "Ubah"}
 ROLE_DEFAULT_PERMS = {
     "admin": {m: "write" for m in MODULES},
     "management": {**{m: "write" for m in MODULES}, "users": "none"},
-    "production_planning": {"smt_production": "read", "lamp_production": "read", "smt_stock": "write",
+    "production_planning": {"smt_production": "write", "smt_stock": "write",
                             "production_needs": "write", "variance": "write", "items": "write", "users": "none"},
-    "production_control": {"smt_production": "write", "lamp_production": "write", "smt_stock": "read",
+    "production_control": {"smt_production": "write", "smt_stock": "read",
                            "production_needs": "read", "variance": "write", "items": "read", "users": "none"},
-    "smt": {"smt_production": "write", "lamp_production": "read", "smt_stock": "write",
+    "smt": {"smt_production": "write", "smt_stock": "write",
             "production_needs": "read", "variance": "read", "items": "read", "users": "none"},
-    "assembly": {"smt_production": "read", "lamp_production": "write", "smt_stock": "read",
+    "assembly": {"smt_production": "write", "smt_stock": "read",
                  "production_needs": "read", "variance": "read", "items": "read", "users": "none"},
 }
 
@@ -159,7 +158,8 @@ def num(v, default=0.0):
     try:
         if v is None or v == "":
             return default
-        return float(v)
+        f = float(v)
+        return default if f != f else f
     except Exception:
         return default
 
@@ -174,12 +174,10 @@ def r1(v):
 BASE_FIELDS = [("date", "Tanggal", False), ("lane", "Lane", False), ("type", "Type", False), ("ics_no", "ICS No.", False)]
 
 FIELDS = {
-    "smt_production": BASE_FIELDS + [
-        ("tt", "T/T (detik)", True), ("led_rank", "LED Rank", False),
-        ("smt1", "SMT Shift 1", True), ("smt2", "SMT Shift 2", True), ("smt3", "SMT Shift 3", True)],
-    "lamp_production": BASE_FIELDS + [
-        ("plan_assy", "Plan Assy", True), ("assy1", "Assy Shift 1", True), ("assy2", "Assy Shift 2", True),
-        ("assy3", "Assy Shift 3", True), ("stock_ok_prev", "Stock OK SMT Kemarin", True)],
+    "smt_production": [("date", "TANGGAL", False), ("lane", "LANE", False), ("product", "PRODUCT", False),
+        ("type", "TYPE", False), ("ics_no", "ICS NO", False), ("tt", "T/T", True), ("planing", "PLANING", True),
+        ("act_s3", "ACT S3", True), ("act_s1", "ACT S1", True), ("act_s2", "ACT S2", True),
+        ("plan_assy_s3", "PLAN ASSY S3", True), ("plan_assy_s1", "PLAN ASSY S1", True), ("plan_assy_s2", "PLAN ASSY S2", True)],
     "smt_stock": BASE_FIELDS + [
         ("stock_ok_prev", "Stock OK SMT Kemarin", True), ("coating", "Coating", True),
         ("belum_cutting", "Belum Cutting", True), ("belum_ict", "Belum ICT", True),
@@ -191,7 +189,7 @@ FIELDS = {
         ("assy_total", "Total Produksi Assy", True), ("smt3", "SMT Shift 3", True),
         ("assy3", "Assy Shift 3", True), ("actual_total_stock", "Actual Total Stock", True),
         ("reason", "Keterangan", False)],
-    "items": [("lane", "Lane", False), ("type", "Type", False), ("ics_no", "ICS No.", False),
+    "items": [("lane", "Lane", False), ("product", "Product", False), ("type", "Type", False), ("ics_no", "ICS No.", False),
               ("tt", "T/T (detik)", True), ("led_rank", "LED Rank", False), ("tray", "Tray", False)],
 }
 
@@ -204,17 +202,13 @@ def compute_item(d: dict) -> dict:
 
 def compute_smt_production(d: dict) -> dict:
     tt = num(d.get("tt"))
-    d["cap_h"] = r1(3600 / tt) if tt else 0.0
-    d["total"] = r1(num(d.get("smt1")) + num(d.get("smt2")) + num(d.get("smt3")))
-    return d
-
-
-def compute_lamp_production(d: dict) -> dict:
-    plan = num(d.get("plan_assy"))
-    d["total"] = r1(num(d.get("assy1")) + num(d.get("assy2")) + num(d.get("assy3")))
-    d["blc"] = r1(num(d.get("stock_ok_prev")) - plan)
-    d["achievement"] = round(d["total"] / plan * 100, 1) if plan else 0.0
-    d["status"] = "SELESAI" if plan and d["total"] >= plan else ("PROSES" if d["total"] > 0 else "BELUM MULAI")
+    d["cap_h"] = round(3600 / tt) if tt else 0.0
+    d["total_smt"] = r1(num(d.get("act_s3")) + num(d.get("act_s1")) + num(d.get("act_s2")))
+    planing = num(d.get("planing"))
+    d["achv"] = round(d["total_smt"] / planing * 100, 1) if planing else 0.0
+    d["total_plan"] = r1(num(d.get("plan_assy_s3")) + num(d.get("plan_assy_s1")) + num(d.get("plan_assy_s2")))
+    d["balance"] = r1(d["total_smt"] - d["total_plan"])
+    d["status"] = "SELESAI" if planing and d["total_smt"] >= planing else ("PROSES" if d["total_smt"] > 0 else "BELUM MULAI")
     return d
 
 
@@ -247,7 +241,6 @@ def compute_variance(d: dict) -> dict:
 
 DATASETS = {
     "smt-production": {"module": "smt_production", "compute": compute_smt_production, "sort": [("date", -1), ("lane", 1)]},
-    "lamp-production": {"module": "lamp_production", "compute": compute_lamp_production, "sort": [("date", -1), ("lane", 1)]},
     "smt-stock": {"module": "smt_stock", "compute": compute_smt_stock, "sort": [("date", -1), ("lane", 1)]},
     "production-needs": {"module": "production_needs", "compute": compute_needs, "sort": [("date", -1), ("lane", 1)]},
     "variance": {"module": "variance", "compute": compute_variance, "sort": [("date", -1), ("lane", 1)]},
@@ -259,7 +252,9 @@ def normalize(module: str, body: dict) -> dict:
     d = {}
     for key, _label, is_num in FIELDS[module]:
         v = body.get(key)
-        d[key] = num(v) if is_num else ("" if v is None else str(v).strip())
+        d[key] = num(v) if is_num else ("" if v is None or str(v) == "nan" else " ".join(str(v).split()))
+    if d.get("ics_no", "").isdigit():
+        d["ics_no"] = d["ics_no"].zfill(10)
     if module == "smt_stock" or module == "variance":
         d["reason"] = str(body.get("reason") or "")
     return DATASETS[[k for k, v in DATASETS.items() if v["module"] == module][0]]["compute"](d)
@@ -517,7 +512,7 @@ async def prev_values(date: str, ics_no: str, user: dict = Depends(get_current_u
 @api.get("/meta/options")
 async def meta_options(user: dict = Depends(get_current_user)):
     lanes, types, ics = set(), set(), set()
-    for m in ("smt_production", "lamp_production", "smt_stock", "production_needs", "variance"):
+    for m in ("smt_production", "smt_stock", "production_needs", "variance"):
         lanes |= {x for x in await db[m].distinct("lane") if x}
         types |= {x for x in await db[m].distinct("type") if x}
         ics |= {x for x in await db[m].distinct("ics_no") if x}
@@ -536,16 +531,16 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
                             user: dict = Depends(get_current_user)):
     dq = build_query({"date_from": date_from, "date_to": date_to})
     smt = await db.smt_production.find(dq).to_list(10000)
-    lamp = await db.lamp_production.find(dq).to_list(10000)
     needs = await db.production_needs.find(dq).to_list(10000)
     var = await db.variance.find(dq).to_list(10000)
 
     stock_dates = await db.smt_stock.distinct("date", dq)
     stock = await db.smt_stock.find({"date": max(stock_dates)}).to_list(10000) if stock_dates else []
 
-    smt_total = sum(num(x.get("total")) for x in smt)
-    plan_assy = sum(num(x.get("plan_assy")) for x in lamp)
-    assy_total = sum(num(x.get("total")) for x in lamp)
+    smt_total = sum(num(x.get("total_smt")) for x in smt)
+    smt_plan = sum(num(x.get("planing")) for x in smt)
+    plan_assy = sum(num(x.get("total_plan")) for x in smt)
+    balance = smt_total - plan_assy
     stock_ok = sum(num(x.get("ok")) for x in stock)
     stock_total = sum(num(x.get("total")) for x in stock)
     shortage_items = [clean(n) for n in needs if n.get("status") == "SHORTAGE"]
@@ -561,8 +556,8 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
 
     by_lane = {}
     for x in smt:
-        t = by_lane.setdefault(x.get("lane") or "-", {"lane": x.get("lane") or "-", "smt1": 0, "smt2": 0, "smt3": 0})
-        for s in ("smt1", "smt2", "smt3"):
+        t = by_lane.setdefault(x.get("lane") or "-", {"lane": x.get("lane") or "-", "act_s3": 0, "act_s1": 0, "act_s2": 0})
+        for s in ("act_s3", "act_s1", "act_s2"):
             t[s] += num(x.get(s))
 
     stock_breakdown = [
@@ -575,9 +570,9 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
 
     return {
         "kpi": {
-            "smt_total": smt_total, "smt_items": len(smt),
-            "plan_assy": plan_assy, "assy_total": assy_total,
-            "assy_achievement": round(assy_total / plan_assy * 100, 1) if plan_assy else 0.0,
+            "smt_total": smt_total, "smt_items": len(smt), "smt_plan": smt_plan,
+            "smt_achievement": round(smt_total / smt_plan * 100, 1) if smt_plan else 0.0,
+            "plan_assy": plan_assy, "balance": balance,
             "stock_ok": stock_ok, "stock_total": stock_total, "stock_items": len(stock),
             "stock_date": max(stock_dates) if stock_dates else None,
             "shortage_count": len(shortage_items), "needs_items": len(needs),
@@ -585,8 +580,7 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
             "variance_sum": sum(num(v.get("variance")) for v in var),
         },
         "stock_breakdown": stock_breakdown,
-        "smt_trend": trend(smt, {"total": "total"}),
-        "assy_trend": trend(lamp, {"plan": "plan_assy", "actual": "total"}),
+        "smt_trend": trend(smt, {"plan": "planing", "actual": "total_smt", "plan_assy": "total_plan"}),
         "smt_by_lane": sorted(by_lane.values(), key=lambda r: r["lane"]),
         "top_shortage": sorted(shortage_items, key=lambda n: n["blc"])[:6],
         "top_variance": sorted([clean(v) for v in variance_items], key=lambda v: abs(num(v.get("variance"))), reverse=True)[:6],
@@ -603,6 +597,8 @@ def header_map(module: str) -> Dict[str, str]:
         m[label.lower()] = key
     m["part number"] = "ics_no"; m["part_number"] = "ics_no"; m["ics no."] = "ics_no"; m["ics no"] = "ics_no"
     m["tanggal"] = "date"; m["keterangan"] = "reason"; m["reason"] = "reason"
+    for skip in ("cap/h", "total smt", "achv %", "total plan", "balance"):
+        m[skip] = "__skip__"
     return m
 
 
@@ -612,7 +608,7 @@ def parse_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:
     else:
         dff = pd.read_excel(io.BytesIO(file_bytes), dtype=str)
     dff = dff.dropna(how="all")
-    return dff.where(pd.notnull(dff), None)
+    return dff.astype(object).where(pd.notnull(dff), None)
 
 
 def map_rows(module: str, dff: pd.DataFrame):
@@ -623,7 +619,7 @@ def map_rows(module: str, dff: pd.DataFrame):
     for rec in dff.to_dict(orient="records"):
         r = {}
         for c, k in cols.items():
-            if k:
+            if k and k != "__skip__":
                 r[k] = rec[c]
         if r.get("date"):
             try:
@@ -688,7 +684,7 @@ async def import_confirm(dataset: str, file: UploadFile = File(...), user: dict 
         if not r.get("ics_no") or (not no_date and not r.get("date")):
             skipped += 1
             continue
-        key = {"ics_no": r["ics_no"], "type": r["type"]} if no_date else {"date": r["date"], "ics_no": r["ics_no"]}
+        key = {"ics_no": r["ics_no"], "type": r["type"]} if no_date else {"date": r["date"], "ics_no": r["ics_no"], "type": r["type"]}
         existing = await db[module].find_one(key)
         if existing:
             r["updated_at"] = now
@@ -713,7 +709,68 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Startup: indexes, admin seed, data seed dari DATA STOCK.xlsx
 # ---------------------------------------------------------------------------
-SEED_VERSION = 2
+SEED_VERSION = 3
+
+
+def read_csv_rows(path: Path):
+    import csv
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        return list(csv.DictReader(f))
+
+
+async def seed_from_excel():
+    meta = await db.meta.find_one({"_id": "seed"})
+    if meta and meta.get("version") == SEED_VERSION:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    if not meta or meta.get("version", 0) < 2:
+        path = ROOT_DIR / "seed" / "data_stock.json"
+        if path.exists():
+            rows = json.loads(path.read_text())
+            prod_date, stock_date = "2026-09-12", "2026-09-13"
+            payload = {"smt_stock": [], "production_needs": [], "variance": []}
+            for r in rows:
+                base = {"lane": r["lane"], "type": r["type"], "ics_no": r["ics_no"]}
+                stock = normalize("smt_stock", {**base, "date": stock_date, "stock_ok_prev": r["stock_ok_prev"], "coating": r["coating"],
+                                                "belum_cutting": r["belum_cutting"], "belum_ict": r["belum_ict"],
+                                                "belum_fct": r["belum_fct"], "ok": r["ok"], "tray": r["tray"]})
+                needs = normalize("production_needs", {**base, "date": prod_date, "plan_assy": r["plan_assy"], "stock_ok_prev": r["stock_ok_prev"]})
+                smt_total = r["smt1"] + r["smt2"] + r["smt3"]
+                assy_total = r["assy1"] + r["assy2"] + r["assy3"]
+                var = normalize("variance", {**base, "date": stock_date, "total_stock_prev": r["total_stock_prev"],
+                                             "smt_total": smt_total, "assy_total": assy_total, "smt3": r["smt3"],
+                                             "assy3": r["assy3"], "actual_total_stock": stock["total"]})
+                for m, d in (("smt_stock", stock), ("production_needs", needs), ("variance", var)):
+                    d["created_at"] = now
+                    payload[m].append(d)
+            for m, docs in payload.items():
+                await db[m].delete_many({})
+                if docs:
+                    await db[m].insert_many(docs)
+                await db[m].create_index([("date", -1), ("ics_no", 1)])
+    # v3: gabung Produksi SMT & ASSY sesuai format CSV
+    csv_path = ROOT_DIR / "seed" / "smt_production.csv"
+    if csv_path.exists():
+        hm = header_map("smt_production")
+        docs = []
+        for rec in read_csv_rows(csv_path):
+            r = {hm.get(k.strip().lower()): v for k, v in rec.items() if hm.get(k.strip().lower()) not in (None, "__skip__")}
+            r["date"] = pd.to_datetime(r["date"]).strftime("%Y-%m-%d")
+            d = normalize("smt_production", r)
+            d["created_at"] = now
+            docs.append(d)
+        await db.smt_production.delete_many({})
+        if docs:
+            await db.smt_production.insert_many(docs)
+        await db.smt_production.create_index([("date", -1), ("ics_no", 1)])
+        for rec in read_csv_rows(csv_path):
+            await db.items.update_many({"ics_no": rec["ICS NO"].strip()},
+                                       {"$set": {"product": rec["PRODUCT"].strip(), "tt": num(rec["T/T"]),
+                                                 "cap_h": round(3600 / num(rec["T/T"])) if num(rec["T/T"]) else 0.0}})
+        await db.items.update_many({"product": {"$exists": False}}, {"$set": {"product": "REGULER"}})
+    await db.lamp_production.drop()
+    await db.meta.update_one({"_id": "seed"}, {"$set": {"version": SEED_VERSION, "at": now}}, upsert=True)
+    logger.info("Seed v%d applied", SEED_VERSION)
 
 
 async def seed_admin():
@@ -748,42 +805,6 @@ async def seed_demo_users():
     async for u in db.users.find({"username": {"$exists": False}}):
         await db.users.update_one({"_id": u["_id"]}, {"$set": {"username": (u.get("email") or str(u["_id"])).split("@")[0]}})
 
-
-async def seed_from_excel():
-    meta = await db.meta.find_one({"_id": "seed"})
-    if meta and meta.get("version") == SEED_VERSION:
-        return
-    path = ROOT_DIR / "seed" / "data_stock.json"
-    if not path.exists():
-        return
-    rows = json.loads(path.read_text())
-    prod_date, stock_date = "2026-09-12", "2026-09-13"
-    now = datetime.now(timezone.utc).isoformat()
-    payload = {cfg["module"]: [] for cfg in DATASETS.values()}
-    for r in rows:
-        base = {"lane": r["lane"], "type": r["type"], "ics_no": r["ics_no"]}
-        smt = normalize("smt_production", {**base, "date": prod_date, "tt": r["tt"], "led_rank": r["led_rank"],
-                                           "smt1": r["smt1"], "smt2": r["smt2"], "smt3": r["smt3"]})
-        lamp = normalize("lamp_production", {**base, "date": prod_date, "plan_assy": r["plan_assy"], "assy1": r["assy1"],
-                                             "assy2": r["assy2"], "assy3": r["assy3"], "stock_ok_prev": r["stock_ok_prev"]})
-        stock = normalize("smt_stock", {**base, "date": stock_date, "stock_ok_prev": r["stock_ok_prev"], "coating": r["coating"],
-                                        "belum_cutting": r["belum_cutting"], "belum_ict": r["belum_ict"],
-                                        "belum_fct": r["belum_fct"], "ok": r["ok"], "tray": r["tray"]})
-        needs = normalize("production_needs", {**base, "date": prod_date, "plan_assy": r["plan_assy"], "stock_ok_prev": r["stock_ok_prev"]})
-        var = normalize("variance", {**base, "date": stock_date, "total_stock_prev": r["total_stock_prev"],
-                                     "smt_total": smt["total"], "assy_total": lamp["total"], "smt3": r["smt3"],
-                                     "assy3": r["assy3"], "actual_total_stock": stock["total"]})
-        for m, d in (("smt_production", smt), ("lamp_production", lamp), ("smt_stock", stock),
-                     ("production_needs", needs), ("variance", var)):
-            d["created_at"] = now
-            payload[m].append(d)
-    for m, docs in payload.items():
-        await db[m].delete_many({})
-        if docs:
-            await db[m].insert_many(docs)
-        await db[m].create_index([("date", -1), ("ics_no", 1)])
-    await db.meta.update_one({"_id": "seed"}, {"$set": {"version": SEED_VERSION, "at": now}}, upsert=True)
-    logger.info("Seeded %d items from DATA STOCK.xlsx", len(rows))
 
 
 async def seed_items():

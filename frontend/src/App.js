@@ -6,7 +6,6 @@ import Layout from "@/components/Layout";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import SMTProduction from "@/pages/SMTProduction";
-import LampProduction from "@/pages/LampProduction";
 import SMTStock from "@/pages/SMTStock";
 import ProductionNeeds from "@/pages/ProductionNeeds";
 import Variance from "@/pages/Variance";
@@ -55,7 +54,6 @@ function App() {
             >
               <Route index element={<Dashboard />} />
               <Route path="smt-production" element={<Guard module="smt_production"><SMTProduction /></Guard>} />
-              <Route path="lamp-production" element={<Guard module="lamp_production"><LampProduction /></Guard>} />
               <Route path="smt-stock" element={<Guard module="smt_stock"><SMTStock /></Guard>} />
               <Route path="production-needs" element={<Guard module="production_needs"><ProductionNeeds /></Guard>} />
               <Route path="variance" element={<Guard module="variance"><Variance /></Guard>} />

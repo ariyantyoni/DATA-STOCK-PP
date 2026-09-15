@@ -10,8 +10,7 @@ import { canRead } from "@/lib/api";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/smt-production", label: "Produksi SMT", icon: Cpu, module: "smt_production" },
-  { to: "/lamp-production", label: "Produksi LAMP ASSY", icon: Lightbulb, module: "lamp_production" },
+  { to: "/smt-production", label: "Produksi SMT & ASSY", icon: Cpu, module: "smt_production" },
   { to: "/smt-stock", label: "Stock SMT", icon: Boxes, module: "smt_stock" },
   { to: "/production-needs", label: "Kebutuhan vs Stock", icon: ClipboardList, module: "production_needs" },
   { to: "/variance", label: "Variance Stock", icon: Scale, module: "variance" },

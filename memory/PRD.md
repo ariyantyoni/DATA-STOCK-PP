@@ -47,6 +47,7 @@ Aplikasi web profesional untuk Control Data Stock & Production di perusahaan man
 - Login via **username + password** (email tetap diterima sebagai fallback); kotak "Akun demo" di halaman login dihapus. User punya field `username` (unik), email opsional; admin utama username `admin` (ADMIN_USERNAME).
 - Bugfix Tambah User: user tanpa email gagal 500 (unique index email null) → email tidak disimpan jika kosong, partial unique index, DuplicateKeyError → 400. Teruji iteration_3 (10/10 + e2e).
 - Tema diubah ke **light/putih** (CSS variables di index.css; warna aksen -400 → -600 untuk kontras); tabel CrudPage diberi garis vertikal pembatas kolom (border-r) + header abu muda.
+- (2026-09-15) **Produksi LAMP ASSY digabung ke Produksi SMT & ASSY** sesuai CSV `smt-production-ISE-PRDM-29.csv`: kolom TANGGAL, LANE, PRODUCT (REGULER/SPO), TYPE, ICS NO, T/T, CAP/H, PLANING, ACT S3/S1/S2, TOTAL SMT, ACHV %, PLAN ASSY S3/S1/S2, TOTAL PLAN, BALANCE (=Total SMT − Total Plan). Endpoint/menu lamp-production dihapus; dashboard & Master Item (field product) disesuaikan; import CSV asli langsung didukung (zero-pad ICS, kolom turunan diabaikan, upsert key date+ics_no+type). Seed v3 dari /app/backend/seed/smt_production.csv (86 baris). Teruji iteration_4 (12/12 + e2e).
 
 ## Backlog / Remaining
 - P1: (kosong)
