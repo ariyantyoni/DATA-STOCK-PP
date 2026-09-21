@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 5 validates the new Audit Trail, Duplicate handling, Notifications, and Dark/Light theme features. Backend: /app/backend/tests/test_audit_notify_dup.py passes 7/7 covering (a) POST /api/smt-production stamps created_by_name='Admin Utama' and created_at, logs CREATE audit with ip and user_agent, PUT logs UPDATE with distinct before/after, DELETE logs DELETE; (b) audit filter accepts date_from/date_to/module/action/search; (c) smt user gets 403 on GET /api/audit; (d) duplicate key (date+ics_no+type) returns 409 with detail.code='DUPLICATE' + message, force:true does UPDATE (doc count unchanged) and writes audit UPDATE with note 'Timpa data duplikat'; (e) import preview /api/import/smt-production/preview returns new/duplicates/invalid; (f) admin sets smt user notify {enabled:true, modules:['smt_production']}, ppic creates smt-production row -> smt user GET /api/notifications unread>=1 and message contains ics_no of new row, POST /api/notifications/read {} clears unread to 0; ppic (actor) does NOT receive notification for its own action. Frontend (Playwright on public URL): admin login -> theme-toggle in header adds/removes class 'dark' on <html> and persists in localStorage cds_theme='dark' across reload; nav-audit visible, /audit renders audit-row-0, audit-filter-action present, audit-detail-0 opens detail dialog; SMT&ASSY table shows 'Diinput oleh' and 'Waktu Input' columns; duplicate flow (2026-09-12/L03/SOLDER 421X/634912900/act_s1=5) -> duplicate-message shown ('Data 0634912900 (SOLDER 421X) pada 2026-09-12 sudah ada...'), duplicate-cancel keeps form open, second submit + duplicate-update sends force POST (200) and closes dialog; notif-bell popover shows notif-history-link; smt/password123 login -> nav-audit hidden, /audit renders data-testid='no-access' ('Anda tidak memiliki akses ke modul ini.'). All backend test data cleaned (ics 7777777777/8/9/0 removed), smt user notify reset to {enabled:false, modules:[]}.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_audit_notify_dup.py",
+    "/app/test_reports/pytest/audit_notify_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now ~1006 lines — well over the 700-line guideline. Split into modules (auth, crud, audit, notifications, import, dashboard, seed) recommended.",
+    "notify_users targets users via db.users.find({'notify.enabled': True, 'notify.modules': module, '_id': {'$ne': ObjectId(actor['id'])}}) — good, but note there is no unread cap or TTL. Old read notifications keep accumulating; add TTL index or cleanup job to prevent unbounded growth.",
+    "log_audit stores full before/after documents including all fields. For heavy datasets this can bloat audit_log rapidly; consider storing only diff() (already implemented but unused) or add a TTL/archival policy.",
+    "client_info uses request.headers['x-forwarded-for'].split(',')[0]. Works but no trust-boundary check — any client could spoof if the ingress does not strip. Acceptable behind Kubernetes ingress but document.",
+    "Duplicate detection uses key {'date','ics_no','type'} for dated modules and {'ics_no','type'} for no_date — good. However, no index is declared for this composite key, so on large collections POST becomes O(N) scan. Add compound indexes on (date, ics_no, type) per collection at startup.",
+    "diff() helper is defined but never called (log_audit passes full before/after). Either remove diff() (dead code) or plug it into the audit response for the UI detail view."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_audit_notify_dup.py",
+    "/app/test_reports/iteration_5.json",
+    "/app/test_reports/pytest/audit_notify_results.xml"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% of tested new-feature flows (theme, audit, no-access guard, duplicate dialog, notif bell)"},
+  "test_credentials": "admin/admin123, ppic/password123, smt/password123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None. Test rows created and deleted within tests; smt user notify reset to enabled:false.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Regression suites: /app/backend/tests/test_smt_assy.py (SMT&ASSY), /app/backend/tests/test_users_mgmt.py (users), /app/backend/tests/test_audit_notify_dup.py (audit/duplicate/notifications). BASE URL is read from /app/frontend/.env REACT_APP_BACKEND_URL (env var fallback). Login body {'username','password'}. Duplicate upsert key = (date, ics_no, type). Notification actor-exclusion is enforced server-side; DATA_MODULES = smt_production, smt_stock, production_needs, variance, items. /app/backend/tests/backend_test.py remains stale from iteration 1 and should be migrated or removed by main agent.",
+  "rca of the issue": "N/A — no issues found."
+}
