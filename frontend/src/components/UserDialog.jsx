@@ -13,12 +13,14 @@ const LEVEL_STYLE = {
 };
 
 export default function UserDialog({ open, onOpenChange, editing, roles, modules, levels, onSubmit, saving }) {
-  const [form, setForm] = useState({ name: "", username: "", email: "", password: "", role: "", permissions: {} });
+  const [form, setForm] = useState({ name: "", username: "", email: "", password: "", role: "", permissions: {}, notify: { enabled: false, modules: [] } });
   const isMainAdmin = editing?.is_main_admin;
+  const dataModules = modules.filter((m) => !["users", "audit"].includes(m.key));
 
   useEffect(() => {
     if (open) setForm({
       name: editing?.name || "", username: editing?.username || "", email: editing?.email || "", password: "",
+      notify: editing?.notify || { enabled: false, modules: [] },
       role: editing?.role || "", permissions: { ...(editing?.permissions || {}) },
     });
   }, [open, editing]);
@@ -34,7 +36,7 @@ export default function UserDialog({ open, onOpenChange, editing, roles, modules
 
   const submit = (e) => {
     e.preventDefault();
-    const payload = { name: form.name, username: form.username, role: form.role, permissions: form.permissions };
+    const payload = { name: form.name, username: form.username, role: form.role, permissions: form.permissions, notify: form.notify };
     if (form.email) payload.email = form.email;
     if (form.password) payload.password = form.password;
     onSubmit(payload);
@@ -88,6 +90,32 @@ export default function UserDialog({ open, onOpenChange, editing, roles, modules
               ))}
             </div>
             {!form.role && <p className="text-xs text-muted-foreground">Pilih role terlebih dahulu untuk mengatur hak akses.</p>}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground uppercase tracking-wider font-mono-data">Notifikasi Input Data</Label>
+              <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={!!form.notify.enabled} data-testid="notify-enabled"
+                  onChange={(e) => set("notify", { ...form.notify, enabled: e.target.checked })} className="accent-primary w-4 h-4" />
+                Terima notifikasi
+              </label>
+            </div>
+            {form.notify.enabled && (
+              <div className="flex flex-wrap gap-2 rounded-lg border border-border p-3" data-testid="notify-modules">
+                {dataModules.map((m) => {
+                  const on = form.notify.modules.includes(m.key);
+                  return (
+                    <button type="button" key={m.key} data-testid={`notify-module-${m.key}`}
+                      onClick={() => set("notify", { ...form.notify, modules: on ? form.notify.modules.filter((x) => x !== m.key) : [...form.notify.modules, m.key] })}
+                      className={cn("px-3 py-1 rounded-full border text-xs transition-colors", on ? "bg-primary/10 text-primary border-primary/40" : "text-muted-foreground border-border hover:bg-secondary")}>
+                      {m.label}
+                    </button>
+                  );
+                })}
+                <p className="w-full text-[11px] text-muted-foreground">User akan menerima notifikasi in-app (ikon lonceng) setiap ada input data baru pada modul terpilih.</p>
+              </div>
+            )}
           </div>
 
           <DialogFooter>

@@ -41,7 +41,37 @@ body {
         --chart-4: 24 95% 53%;
         --chart-5: 0 84% 60%;
         --radius: 0.5rem;
+        --grid: #e2e8f0;
+        --axis: #64748b;
     }
+    .dark {
+        --background: 240 21% 12%;
+        --foreground: 210 40% 96%;
+        --card: 240 20% 15%;
+        --card-foreground: 210 40% 96%;
+        --popover: 240 20% 14%;
+        --popover-foreground: 210 40% 96%;
+        --primary: 199 89% 58%;
+        --primary-foreground: 222 47% 8%;
+        --secondary: 240 16% 21%;
+        --secondary-foreground: 210 40% 96%;
+        --muted: 240 16% 21%;
+        --muted-foreground: 215 20% 68%;
+        --accent: 240 16% 24%;
+        --accent-foreground: 210 40% 96%;
+        --border: 240 14% 27%;
+        --input: 240 14% 27%;
+        --ring: 199 89% 58%;
+        --grid: #33344d;
+        --axis: #94a3b8;
+    }
+    .dark .text-emerald-600 { color: #34d399; } .dark .text-amber-600 { color: #fbbf24; } .dark .text-red-600 { color: #f87171; }
+    .dark .text-sky-600 { color: #38bdf8; } .dark .text-cyan-600 { color: #22d3ee; } .dark .text-orange-600 { color: #fb923c; }
+    .dark .text-blue-600 { color: #60a5fa; } .dark .text-slate-600 { color: #cbd5e1; } .dark .text-slate-700 { color: #cbd5e1; }
+    .dark .text-emerald-700 { color: #6ee7b7; } .dark .text-sky-700 { color: #7dd3fc; }
+    .dark .bg-slate-50 { background-color: hsl(240 20% 14%); }
+    .dark ::-webkit-scrollbar-track { background: hsl(240 20% 14%); }
+    .dark ::-webkit-scrollbar-thumb { background: hsl(240 14% 30%); }
 }
 
 @layer base {

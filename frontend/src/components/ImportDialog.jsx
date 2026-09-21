@@ -49,7 +49,7 @@ export default function ImportDialog({ open, onOpenChange, dataset, title, onDon
       const fd = new FormData();
       fd.append("file", file);
       const { data } = await api.post(`/import/${dataset}/confirm`, fd);
-      toast.success(`${data.inserted} baris ditambahkan, ${data.updated} diperbarui${data.skipped ? `, ${data.skipped} dilewati` : ""}`);
+      toast.success(`Import selesai: ${data.inserted} data baru, ${data.updated} duplikat diperbarui${data.skipped ? `, ${data.skipped} dilewati` : ""}`);
       reset();
       onOpenChange(false);
       onDone?.();
@@ -96,6 +96,16 @@ export default function ImportDialog({ open, onOpenChange, dataset, title, onDon
               {file?.name} · {preview.total} baris terdeteksi · menampilkan {preview.rows.length}
               {preview.invalid > 0 && <span className="text-red-600"> · {preview.invalid} baris tanpa Tanggal/ICS No. akan dilewati</span>}
             </p>
+            <div className="flex flex-wrap gap-2 text-xs font-mono-data" data-testid="import-summary">
+              <span className="px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-600 border border-emerald-500/30">{preview.new} data baru</span>
+              <span className={`px-2 py-1 rounded-md border ${preview.duplicates > 0 ? "bg-amber-500/10 text-amber-600 border-amber-500/30" : "bg-secondary text-muted-foreground border-border"}`}>{preview.duplicates} duplikat (akan diperbarui)</span>
+              {preview.invalid > 0 && <span className="px-2 py-1 rounded-md bg-red-500/10 text-red-600 border border-red-500/30">{preview.invalid} dilewati</span>}
+            </div>
+            {preview.duplicates > 0 && (
+              <p className="text-xs text-amber-600 bg-amber-500/10 border border-amber-500/30 rounded-md px-3 py-2" data-testid="import-duplicate-warning">
+                Peringatan: {preview.duplicates} data dengan Tanggal + ICS No + Type yang sama sudah ada. Konfirmasi akan memperbarui data tersebut (tercatat di Audit Trail). Klik "Pilih file lain" untuk membatalkan.
+              </p>
+            )}
             {preview.unknown_columns?.length > 0 && (
               <p className="text-xs text-amber-600" data-testid="import-unknown-columns">Kolom tidak dikenal (diabaikan): {preview.unknown_columns.join(", ")}</p>
             )}
@@ -106,7 +116,7 @@ export default function ImportDialog({ open, onOpenChange, dataset, title, onDon
                 </thead>
                 <tbody>
                   {preview.rows.map((r, i) => (
-                    <tr key={i} className="border-t border-border/60">
+                    <tr key={i} className={`border-t border-border/60 ${r._duplicate ? "bg-amber-500/10" : ""}`}>
                       {preview.columns.map((c) => <td key={c} className="px-3 py-1.5 font-mono-data whitespace-nowrap">{String(r[c] ?? "")}</td>)}
                     </tr>
                   ))}

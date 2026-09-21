@@ -3,10 +3,12 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import {
   LayoutDashboard, Cpu, Lightbulb, Boxes, ClipboardList, Scale,
-  Users as UsersIcon, LogOut, Factory, Menu, X, Package,
+  Users as UsersIcon, LogOut, Factory, Menu, X, Package, ScrollText, Sun, Moon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { canRead } from "@/lib/api";
+import { useTheme } from "@/context/ThemeContext";
+import NotificationBell from "@/components/NotificationBell";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -15,6 +17,7 @@ const NAV = [
   { to: "/production-needs", label: "Kebutuhan vs Stock", icon: ClipboardList, module: "production_needs" },
   { to: "/variance", label: "Variance Stock", icon: Scale, module: "variance" },
   { to: "/items", label: "Master Item", icon: Package, module: "items" },
+  { to: "/audit", label: "Audit Trail", icon: ScrollText, module: "audit" },
   { to: "/users", label: "Manajemen User", icon: UsersIcon, module: "users" },
 ];
 
@@ -29,6 +32,7 @@ const ROLE_BADGE = {
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { theme, toggle } = useTheme();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
@@ -117,6 +121,11 @@ export default function Layout() {
                 {user?.role_label}
               </span>
             </div>
+            <button onClick={toggle} data-testid="theme-toggle" title={theme === "dark" ? "Mode terang" : "Mode gelap"}
+              className="w-9 h-9 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors">
+              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+            <NotificationBell />
             <button
               onClick={handleLogout}
               data-testid="logout-button"

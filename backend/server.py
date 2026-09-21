@@ -53,6 +53,7 @@ MODULES = {
     "production_needs": "Kebutuhan vs Stock",
     "variance": "Variance Stock",
     "items": "Master Item",
+    "audit": "Audit Trail",
     "users": "Manajemen User",
 }
 LEVELS = ["none", "read", "write"]
@@ -60,7 +61,7 @@ LEVEL_LABELS = {"none": "Tidak ada", "read": "Lihat", "write": "Ubah"}
 
 ROLE_DEFAULT_PERMS = {
     "admin": {m: "write" for m in MODULES},
-    "management": {**{m: "write" for m in MODULES}, "users": "none"},
+    "management": {**{m: "write" for m in MODULES}, "users": "none", "audit": "read"},
     "production_planning": {"smt_production": "write", "smt_stock": "write",
                             "production_needs": "write", "variance": "write", "items": "write", "users": "none"},
     "production_control": {"smt_production": "write", "smt_stock": "read",
@@ -74,6 +75,7 @@ ROLE_DEFAULT_PERMS = {
 
 def effective_perms(user: dict) -> Dict[str, str]:
     base = dict(ROLE_DEFAULT_PERMS.get(user.get("role"), {}))
+    base.setdefault("audit", "none")
     for m, lvl in (user.get("permissions") or {}).items():
         if m in MODULES and lvl in LEVELS:
             base[m] = lvl
@@ -106,6 +108,7 @@ def public_user(user: dict) -> dict:
     user["role_label"] = ROLE_LABELS.get(user.get("role"), user.get("role"))
     user["permissions"] = user.get("permissions") or {}
     user["email"] = user.get("email") or ""
+    user["notify"] = user.get("notify") or {"enabled": False, "modules": []}
     user["effective_permissions"] = effective_perms(user)
     user["is_main_admin"] = user.get("email") == os.environ.get("ADMIN_EMAIL", "").lower()
     return user
@@ -166,6 +169,67 @@ def num(v, default=0.0):
 
 def r1(v):
     return round(v, 2)
+
+
+# ---------------------------------------------------------------------------
+# Audit trail & notifications
+# ---------------------------------------------------------------------------
+DATA_MODULES = ["smt_production", "smt_stock", "production_needs", "variance", "items"]
+
+
+def client_info(request: Optional[Request]):
+    if request is None:
+        return "", ""
+    ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "")
+    return ip, request.headers.get("user-agent", "")[:200]
+
+
+async def log_audit(request: Optional[Request], user: dict, action: str, module: str,
+                    record_id: str = "", before: Optional[dict] = None, after: Optional[dict] = None, note: str = ""):
+    ip, ua = client_info(request)
+    ref = after or before or {}
+    await db.audit_log.insert_one({
+        "ts": datetime.now(timezone.utc).isoformat(), "user_id": user["id"], "user_name": user.get("name", ""),
+        "username": user.get("username", ""), "role": user.get("role", ""), "action": action, "module": module,
+        "record_id": record_id, "ics_no": ref.get("ics_no", ""), "type": ref.get("type", ""), "date": ref.get("date", ""),
+        "before": strip_meta(before), "after": strip_meta(after), "note": note, "ip": ip, "user_agent": ua})
+
+
+def strip_meta(d: Optional[dict]):
+    if not d:
+        return None
+    return {k: v for k, v in d.items() if k not in ("_id", "id", "created_at", "updated_at", "created_by", "created_by_name", "updated_by", "updated_by_name")}
+
+
+def diff(before: dict, after: dict) -> dict:
+    return {k: {"dari": before.get(k), "ke": after.get(k)} for k in after if k in strip_meta(after) and before.get(k) != after.get(k)}
+
+
+async def notify_users(actor: dict, module: str, message: str):
+    if module not in DATA_MODULES:
+        return
+    targets = await db.users.find({"notify.enabled": True, "notify.modules": module, "_id": {"$ne": ObjectId(actor["id"])}}).to_list(500)
+    if not targets:
+        return
+    ts = datetime.now(timezone.utc).isoformat()
+    await db.notifications.insert_many([{"user_id": str(t["_id"]), "module": module, "title": f"Data {MODULES[module]} baru",
+                                         "message": message, "read": False, "ts": ts} for t in targets])
+
+
+def stamp(d: dict, user: dict, created: bool):
+    now = datetime.now(timezone.utc).isoformat()
+    if created:
+        d["created_at"] = now; d["created_by"] = user["id"]; d["created_by_name"] = user.get("name", "")
+    else:
+        d["updated_at"] = now; d["updated_by"] = user["id"]; d["updated_by_name"] = user.get("name", "")
+    return d
+
+
+def fmt_ts(iso: str) -> str:
+    try:
+        return datetime.fromisoformat(iso).astimezone().strftime("%d-%m-%Y %H:%M")
+    except Exception:
+        return iso
 
 
 # ---------------------------------------------------------------------------
@@ -275,6 +339,7 @@ class UserCreate(BaseModel):
     name: str
     role: str
     permissions: Optional[Dict[str, str]] = None
+    notify: Optional[dict] = None
 
 
 class UserUpdate(BaseModel):
@@ -284,6 +349,12 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
     password: Optional[str] = None
     permissions: Optional[Dict[str, str]] = None
+    notify: Optional[dict] = None
+
+
+def validate_notify(n: Optional[dict]) -> dict:
+    n = n or {}
+    return {"enabled": bool(n.get("enabled")), "modules": [m for m in (n.get("modules") or []) if m in DATA_MODULES]}
 
 
 def norm_username(u: str) -> str:
@@ -349,7 +420,7 @@ async def create_user(body: UserCreate, user: dict = Depends(require_perm("users
     if email and await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Email sudah terdaftar")
     doc = {"username": username, "password_hash": hash_password(body.password), "name": body.name.strip(),
-           "role": body.role, "permissions": validate_perms(body.permissions),
+           "role": body.role, "permissions": validate_perms(body.permissions), "notify": validate_notify(body.notify),
            "created_at": datetime.now(timezone.utc).isoformat()}
     if email:
         doc["email"] = email
@@ -392,6 +463,8 @@ async def update_user(uid: str, body: UserUpdate, user: dict = Depends(require_p
         upd["password_hash"] = hash_password(body.password)
     if body.permissions is not None:
         upd["permissions"] = {} if is_main_admin else validate_perms(body.permissions)
+    if body.notify is not None:
+        upd["notify"] = validate_notify(body.notify)
     if upd:
         upd["updated_at"] = datetime.now(timezone.utc).isoformat()
         try:
@@ -465,30 +538,50 @@ def register_crud(dataset: str):
         return out
 
     @api.post(f"/{dataset}")
-    async def create_item(body: dict, user: dict = Depends(require_perm(module, "write"))):
+    async def create_item(body: dict, request: Request, user: dict = Depends(require_perm(module, "write"))):
+        force = bool(body.get("force"))
         d = normalize(module, body)
         if not d.get("ics_no") or (not cfg.get("no_date") and not d.get("date")):
             raise HTTPException(status_code=400, detail="Tanggal dan ICS No. wajib diisi")
-        if cfg.get("no_date") and await coll.find_one({"ics_no": d["ics_no"], "type": d["type"]}):
-            raise HTTPException(status_code=400, detail="Item dengan ICS No. dan Type ini sudah ada")
-        d["created_at"] = datetime.now(timezone.utc).isoformat()
+        key = {"ics_no": d["ics_no"], "type": d["type"]} if cfg.get("no_date") else {"date": d["date"], "ics_no": d["ics_no"], "type": d["type"]}
+        existing = await coll.find_one(key)
+        if existing and not force:
+            when = f" pada {d['date']}" if d.get("date") else ""
+            raise HTTPException(status_code=409, detail={
+                "code": "DUPLICATE", "existing_id": str(existing["_id"]),
+                "message": f"Data {d['ics_no']} ({d['type']}){when} sudah ada. Apakah Anda ingin memperbarui data yang ada atau membatalkan?"})
+        if existing:
+            before = clean(existing)
+            stamp(d, user, False)
+            await coll.update_one({"_id": existing["_id"]}, {"$set": d})
+            doc = clean(await coll.find_one({"_id": existing["_id"]}))
+            await log_audit(request, user, "UPDATE", module, doc["id"], before, doc, "Timpa data duplikat")
+            return doc
+        stamp(d, user, True)
         res = await coll.insert_one(d)
         d["id"] = str(res.inserted_id); d.pop("_id", None)
+        await log_audit(request, user, "CREATE", module, d["id"], None, d)
+        await notify_users(user, module, f"Data {MODULES[module]} baru ({d['ics_no']} · {d['type']}) telah diinput oleh {user['name']} pada {fmt_ts(d['created_at'])}. Silakan cek dashboard.")
         return d
 
     @api.put(f"/{dataset}/{{rid}}")
-    async def update_item(rid: str, body: dict, user: dict = Depends(require_perm(module, "write"))):
-        d = normalize(module, body)
-        d["updated_at"] = datetime.now(timezone.utc).isoformat()
-        await coll.update_one({"_id": oid(rid)}, {"$set": d})
-        doc = await coll.find_one({"_id": oid(rid)})
-        if not doc:
+    async def update_item(rid: str, body: dict, request: Request, user: dict = Depends(require_perm(module, "write"))):
+        existing = await coll.find_one({"_id": oid(rid)})
+        if not existing:
             raise HTTPException(status_code=404, detail="Data tidak ditemukan")
-        return clean(doc)
+        d = normalize(module, body)
+        stamp(d, user, False)
+        await coll.update_one({"_id": oid(rid)}, {"$set": d})
+        doc = clean(await coll.find_one({"_id": oid(rid)}))
+        await log_audit(request, user, "UPDATE", module, rid, clean(existing), doc)
+        return doc
 
     @api.delete(f"/{dataset}/{{rid}}")
-    async def delete_item(rid: str, user: dict = Depends(require_perm(module, "write"))):
+    async def delete_item(rid: str, request: Request, user: dict = Depends(require_perm(module, "write"))):
+        existing = await coll.find_one({"_id": oid(rid)})
         await coll.delete_one({"_id": oid(rid)})
+        if existing:
+            await log_audit(request, user, "DELETE", module, rid, clean(existing), None)
         return {"ok": True}
 
 
@@ -661,12 +754,21 @@ async def import_preview(dataset: str, file: UploadFile = File(...), user: dict 
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Gagal membaca file: {e}")
     invalid = sum(1 for r in rows if not r.get("ics_no") or (not DATASETS[dataset].get("no_date") and not r.get("date")))
+    no_date = DATASETS[dataset].get("no_date")
+    duplicates = 0
+    for r in rows:
+        if not r.get("ics_no"):
+            continue
+        key = {"ics_no": r["ics_no"], "type": r["type"]} if no_date else {"date": r.get("date"), "ics_no": r["ics_no"], "type": r["type"]}
+        if await db[module].find_one(key):
+            duplicates += 1; r["_duplicate"] = True
     columns = [k for k, _, _ in FIELDS[module]] + [k for k in rows[0].keys() if rows and k not in [f[0] for f in FIELDS[module]]] if rows else []
-    return {"columns": columns, "rows": rows[:100], "total": len(rows), "invalid": invalid, "unknown_columns": unknown}
+    return {"columns": columns, "rows": rows[:100], "total": len(rows), "invalid": invalid, "unknown_columns": unknown,
+            "duplicates": duplicates, "new": len(rows) - invalid - duplicates}
 
 
 @api.post("/import/{dataset}/confirm")
-async def import_confirm(dataset: str, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+async def import_confirm(dataset: str, request: Request, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
     if dataset not in DATASETS:
         raise HTTPException(status_code=400, detail="Dataset tidak dikenal")
     module = DATASETS[dataset]["module"]
@@ -687,12 +789,65 @@ async def import_confirm(dataset: str, file: UploadFile = File(...), user: dict 
         key = {"ics_no": r["ics_no"], "type": r["type"]} if no_date else {"date": r["date"], "ics_no": r["ics_no"], "type": r["type"]}
         existing = await db[module].find_one(key)
         if existing:
-            r["updated_at"] = now
+            stamp(r, user, False)
             await db[module].update_one(key, {"$set": r}); updated += 1
+            after = clean(await db[module].find_one({"_id": existing["_id"]}))
+            await log_audit(request, user, "UPDATE", module, after["id"], clean(existing), after, f"Import {file.filename}")
         else:
-            r["created_at"] = now
-            await db[module].insert_one(r); inserted += 1
+            stamp(r, user, True)
+            res = await db[module].insert_one(r); inserted += 1
+            r["id"] = str(res.inserted_id); r.pop("_id", None)
+            await log_audit(request, user, "CREATE", module, r["id"], None, r, f"Import {file.filename}")
+    if inserted or updated:
+        await notify_users(user, module, f"Import {MODULES[module]}: {inserted} data baru, {updated} diperbarui oleh {user['name']} pada {fmt_ts(now)}. Silakan cek dashboard.")
     return {"inserted": inserted, "updated": updated, "skipped": skipped}
+
+
+# ---------------------------------------------------------------------------
+# AUDIT TRAIL & NOTIFICATIONS endpoints
+# ---------------------------------------------------------------------------
+@api.get("/audit")
+async def list_audit(user_id: Optional[str] = None, action: Optional[str] = None, module: Optional[str] = None,
+                     date_from: Optional[str] = None, date_to: Optional[str] = None, search: Optional[str] = None,
+                     user: dict = Depends(require_perm("audit", "read"))):
+    q = {}
+    if user_id:
+        q["user_id"] = user_id
+    if action:
+        q["action"] = action
+    if module:
+        q["module"] = module
+    if date_from or date_to:
+        rng = {}
+        if date_from:
+            rng["$gte"] = date_from
+        if date_to:
+            rng["$lte"] = date_to + "T23:59:59.999999+00:00"
+        q["ts"] = rng
+    if search:
+        q["$or"] = [{f: {"$regex": search, "$options": "i"}} for f in ("ics_no", "type", "user_name", "note")]
+    docs = await db.audit_log.find(q).sort("ts", -1).to_list(500)
+    return [clean(d) for d in docs]
+
+
+@api.get("/notifications")
+async def list_notifications(user: dict = Depends(get_current_user)):
+    docs = await db.notifications.find({"user_id": user["id"]}).sort("ts", -1).to_list(100)
+    unread = await db.notifications.count_documents({"user_id": user["id"], "read": False})
+    return {"items": [clean(d) for d in docs], "unread": unread}
+
+
+class ReadBody(BaseModel):
+    ids: Optional[list] = None
+
+
+@api.post("/notifications/read")
+async def read_notifications(body: ReadBody, user: dict = Depends(get_current_user)):
+    q = {"user_id": user["id"]}
+    if body.ids:
+        q["_id"] = {"$in": [oid(i) for i in body.ids]}
+    await db.notifications.update_many(q, {"$set": {"read": True}})
+    return {"ok": True}
 
 
 app.include_router(api)
@@ -838,6 +993,8 @@ async def startup():
     await db.users.create_index("email", unique=True,
                                 partialFilterExpression={"email": {"$type": "string"}})
     await db.users.create_index("username", unique=True, sparse=True)
+    await db.audit_log.create_index([("ts", -1)])
+    await db.notifications.create_index([("user_id", 1), ("read", 1), ("ts", -1)])
     await seed_admin()
     await seed_demo_users()
     await seed_from_excel()

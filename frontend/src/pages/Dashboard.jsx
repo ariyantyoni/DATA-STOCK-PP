@@ -77,7 +77,7 @@ export default function Dashboard() {
     return <div className="flex items-center justify-center py-32"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
   const k = data.kpi;
-  const axis = { fill: "#64748b", fontSize: 11 };
+  const axis = { fill: "var(--axis)", fontSize: 11 };
 
   return (
     <div className="space-y-6 fade-up">
@@ -128,7 +128,7 @@ export default function Dashboard() {
                   <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--grid)" />
               <XAxis dataKey="date" tick={axis} tickFormatter={(d) => d?.slice(5)} />
               <YAxis tick={axis} />
               <Tooltip content={<TooltipBox />} />
@@ -164,10 +164,10 @@ export default function Dashboard() {
         <Panel icon={Cpu} title="Hasil SMT per Lane (per Shift)" tone="text-cyan-600" className="lg:col-span-2">
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={data.smt_by_lane}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--grid)" />
               <XAxis dataKey="lane" tick={axis} />
               <YAxis tick={axis} />
-              <Tooltip content={<TooltipBox />} cursor={{ fill: "#e2e8f040" }} />
+              <Tooltip content={<TooltipBox />} cursor={{ fill: "var(--grid)" }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar dataKey="act_s3" name="Shift 3" stackId="a" fill="#0369a1" />
               <Bar dataKey="act_s1" name="Shift 1" stackId="a" fill="#38bdf8" />

@@ -2,7 +2,10 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { ThemeProvider } from "@/context/ThemeContext";
 import Layout from "@/components/Layout";
+import AuditTrail from "@/pages/AuditTrail";
+import Notifications from "@/pages/Notifications";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import SMTProduction from "@/pages/SMTProduction";
@@ -40,6 +43,7 @@ function Guard({ module, children }) {
 function App() {
   return (
     <div className="App min-h-screen">
+      <ThemeProvider>
       <AuthProvider>
         <BrowserRouter>
           <Routes>
@@ -58,12 +62,15 @@ function App() {
               <Route path="production-needs" element={<Guard module="production_needs"><ProductionNeeds /></Guard>} />
               <Route path="variance" element={<Guard module="variance"><Variance /></Guard>} />
               <Route path="items" element={<Guard module="items"><MasterItems /></Guard>} />
+              <Route path="audit" element={<Guard module="audit"><AuditTrail /></Guard>} />
+              <Route path="notifications" element={<Notifications />} />
               <Route path="users" element={<Guard module="users"><Users /></Guard>} />
             </Route>
           </Routes>
         </BrowserRouter>
         <Toaster position="top-right" richColors />
       </AuthProvider>
+      </ThemeProvider>
     </div>
   );
 }
