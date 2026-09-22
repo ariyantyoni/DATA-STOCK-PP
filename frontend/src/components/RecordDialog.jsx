@@ -17,6 +17,7 @@ export default function RecordDialog({ open, onOpenChange, title, fields, initia
   const [prev, setPrev] = useState(null);
   const touched = useRef(new Set());
   const hasPrev = fields.some((f) => PREV_KEYS.includes(f.key));
+  const hasStockOk = fields.some((f) => f.key === "stock_ok_prev");
 
   const pickItem = (it) => setForm((p) => {
     const n = { ...p };
@@ -38,7 +39,7 @@ export default function RecordDialog({ open, onOpenChange, title, fields, initia
     if (!open || !hasPrev || !form.date || !form.ics_no || initial) return;
     const t = setTimeout(async () => {
       try {
-        const { data } = await api.get("/prev-values", { params: { date: form.date, ics_no: form.ics_no } });
+        const { data } = await api.get("/prev-values", { params: { date: form.date, ics_no: form.ics_no, type: form.type || undefined } });
         setPrev(data);
         if (data.found) {
           setForm((p) => {
@@ -60,6 +61,7 @@ export default function RecordDialog({ open, onOpenChange, title, fields, initia
     fields.forEach((f) => {
       if (f.type === "number") payload[f.key] = payload[f.key] === "" ? 0 : Number(payload[f.key]);
     });
+    if (hasStockOk) payload.stock_ok_manual = touched.current.has("stock_ok_prev") || !!initial?.stock_ok_manual;
     onSubmit(payload);
   };
 
@@ -73,7 +75,7 @@ export default function RecordDialog({ open, onOpenChange, title, fields, initia
         {hasPrev && !initial && prev && (
           <p data-testid="prev-values-hint" className={`text-xs font-mono-data flex items-center gap-1.5 ${prev.found ? "text-emerald-600" : "text-amber-600"}`}>
             <History className="w-3.5 h-3.5" />
-            {prev.found ? `Nilai kemarin diambil dari Stock SMT ${prev.source_date} (OK ${prev.stock_ok_prev}, Total ${prev.total_stock_prev})` : "Tidak ada data Stock SMT sebelum tanggal ini — isi nilai kemarin manual"}
+            {prev.found ? `Nilai kemarin diambil dari Stock SMT ${prev.source_date} (OK ${prev.stock_ok_prev}, Total ${prev.total_stock_prev}). Jika Anda mengubah manual, nilai tidak akan ditautkan lagi.` : "Tidak ada data Stock SMT sebelum tanggal ini — isi nilai kemarin manual"}
           </p>
         )}
         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4 py-2">

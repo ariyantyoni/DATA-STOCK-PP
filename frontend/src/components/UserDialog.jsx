@@ -15,7 +15,7 @@ const LEVEL_STYLE = {
 export default function UserDialog({ open, onOpenChange, editing, roles, modules, levels, onSubmit, saving }) {
   const [form, setForm] = useState({ name: "", username: "", email: "", password: "", role: "", permissions: {}, notify: { enabled: false, modules: [] } });
   const isMainAdmin = editing?.is_main_admin;
-  const dataModules = modules.filter((m) => !["users", "audit"].includes(m.key));
+  const dataModules = modules.filter((m) => !["users", "audit", "backup"].includes(m.key));
 
   useEffect(() => {
     if (open) setForm({

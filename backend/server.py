@@ -17,6 +17,7 @@ from pymongo.errors import DuplicateKeyError
 import logging
 import io
 import json
+import zipfile
 import jwt
 import bcrypt
 import pandas as pd
@@ -54,6 +55,7 @@ MODULES = {
     "variance": "Variance Stock",
     "items": "Master Item",
     "audit": "Audit Trail",
+    "backup": "Backup & Restore",
     "users": "Manajemen User",
 }
 LEVELS = ["none", "read", "write"]
@@ -61,7 +63,7 @@ LEVEL_LABELS = {"none": "Tidak ada", "read": "Lihat", "write": "Ubah"}
 
 ROLE_DEFAULT_PERMS = {
     "admin": {m: "write" for m in MODULES},
-    "management": {**{m: "write" for m in MODULES}, "users": "none", "audit": "read"},
+    "management": {**{m: "write" for m in MODULES}, "users": "none", "audit": "read", "backup": "none"},
     "production_planning": {"smt_production": "write", "smt_stock": "write",
                             "production_needs": "write", "variance": "write", "items": "write", "users": "none"},
     "production_control": {"smt_production": "write", "smt_stock": "read",
@@ -76,6 +78,7 @@ ROLE_DEFAULT_PERMS = {
 def effective_perms(user: dict) -> Dict[str, str]:
     base = dict(ROLE_DEFAULT_PERMS.get(user.get("role"), {}))
     base.setdefault("audit", "none")
+    base.setdefault("backup", "none")
     for m, lvl in (user.get("permissions") or {}).items():
         if m in MODULES and lvl in LEVELS:
             base[m] = lvl
@@ -239,9 +242,10 @@ BASE_FIELDS = [("date", "Tanggal", False), ("lane", "Lane", False), ("type", "Ty
 
 FIELDS = {
     "smt_production": [("date", "TANGGAL", False), ("lane", "LANE", False), ("product", "PRODUCT", False),
-        ("type", "TYPE", False), ("ics_no", "ICS NO", False), ("tt", "T/T", True), ("planing", "PLANING", True),
-        ("act_s3", "ACT S3", True), ("act_s1", "ACT S1", True), ("act_s2", "ACT S2", True),
-        ("plan_assy_s3", "PLAN ASSY S3", True), ("plan_assy_s1", "PLAN ASSY S1", True), ("plan_assy_s2", "PLAN ASSY S2", True)],
+        ("type", "TYPE", False), ("ics_no", "ICS NO", False), ("tt", "T/T", True), ("planing_smt", "PLANING SMT", True),
+        ("act_smt_s3", "ACT SMT S3", True), ("act_smt_s1", "ACT SMT S1", True), ("act_smt_s2", "ACT SMT S2", True),
+        ("plan_assy", "PLAN ASSY", True),
+        ("act_assy_s3", "ACT ASSY S3", True), ("act_assy_s1", "ACT ASSY S1", True), ("act_assy_s2", "ACT ASSY S2", True)],
     "smt_stock": BASE_FIELDS + [
         ("stock_ok_prev", "Stock OK SMT Kemarin", True), ("coating", "Coating", True),
         ("belum_cutting", "Belum Cutting", True), ("belum_ict", "Belum ICT", True),
@@ -267,12 +271,12 @@ def compute_item(d: dict) -> dict:
 def compute_smt_production(d: dict) -> dict:
     tt = num(d.get("tt"))
     d["cap_h"] = round(3600 / tt) if tt else 0.0
-    d["total_smt"] = r1(num(d.get("act_s3")) + num(d.get("act_s1")) + num(d.get("act_s2")))
-    planing = num(d.get("planing"))
-    d["achv"] = round(d["total_smt"] / planing * 100, 1) if planing else 0.0
-    d["total_plan"] = r1(num(d.get("plan_assy_s3")) + num(d.get("plan_assy_s1")) + num(d.get("plan_assy_s2")))
-    d["balance"] = r1(d["total_smt"] - d["total_plan"])
-    d["status"] = "SELESAI" if planing and d["total_smt"] >= planing else ("PROSES" if d["total_smt"] > 0 else "BELUM MULAI")
+    d["total_act_smt"] = r1(num(d.get("act_smt_s3")) + num(d.get("act_smt_s1")) + num(d.get("act_smt_s2")))
+    planing = num(d.get("planing_smt"))
+    d["achv"] = round(d["total_act_smt"] / planing * 100, 1) if planing else 0.0
+    d["total_act_assy"] = r1(num(d.get("act_assy_s3")) + num(d.get("act_assy_s1")) + num(d.get("act_assy_s2")))
+    d["balance"] = r1(d["total_act_smt"] - d["total_act_assy"])
+    d["status"] = "SELESAI" if planing and d["total_act_smt"] >= planing else ("PROSES" if d["total_act_smt"] > 0 else "BELUM MULAI")
     return d
 
 
@@ -319,6 +323,8 @@ def normalize(module: str, body: dict) -> dict:
         d[key] = num(v) if is_num else ("" if v is None or str(v) == "nan" else " ".join(str(v).split()))
     if d.get("ics_no", "").isdigit():
         d["ics_no"] = d["ics_no"].zfill(10)
+    if module == "smt_stock":
+        d["stock_ok_manual"] = bool(body.get("stock_ok_manual"))
     if module == "smt_stock" or module == "variance":
         d["reason"] = str(body.get("reason") or "")
     return DATASETS[[k for k, v in DATASETS.items() if v["module"] == module][0]]["compute"](d)
@@ -533,6 +539,8 @@ def register_crud(dataset: str):
                          "ics_no": ics_no, "search": search})
         docs = await coll.find(q).sort(cfg["sort"]).to_list(5000)
         out = [clean(d) for d in docs]
+        if module == "smt_stock":
+            out = await link_stock_prev(out)
         if status:
             out = [o for o in out if o.get("status") == status or o.get("variance_status") == status]
         return out
@@ -589,14 +597,41 @@ for _ds in DATASETS:
     register_crud(_ds)
 
 
-@api.get("/prev-values")
-async def prev_values(date: str, ics_no: str, user: dict = Depends(get_current_user)):
-    doc = await db.smt_stock.find({"ics_no": ics_no, "date": {"$lt": date}}).sort("date", -1).limit(1).to_list(1)
+async def prev_stock(date: str, ics_no: str, type_: Optional[str] = None):
+    q = {"ics_no": ics_no}
+    if type_:
+        q["type"] = type_
+    try:
+        h1 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+    except Exception:
+        return None
+    doc = await db.smt_stock.find_one({**q, "date": h1})
     if not doc:
+        docs = await db.smt_stock.find({**q, "date": {"$lt": date}}).sort("date", -1).limit(1).to_list(1)
+        doc = docs[0] if docs else None
+    if not doc and type_:
+        return await prev_stock(date, ics_no, None)
+    return doc
+
+
+@api.get("/prev-values")
+async def prev_values(date: str, ics_no: str, type: Optional[str] = None, user: dict = Depends(get_current_user)):
+    d = await prev_stock(date, ics_no, type)
+    if not d:
         return {"found": False}
-    d = doc[0]
     return {"found": True, "source_date": d["date"], "stock_ok_prev": num(d.get("ok")),
             "total_stock_prev": num(d.get("total"))}
+
+
+async def link_stock_prev(docs: list) -> list:
+    """Isi stock_ok_prev dari Stock SMT H-1 untuk dokumen smt_stock yang tidak diedit manual."""
+    for d in docs:
+        if d.get("stock_ok_manual"):
+            continue
+        p = await prev_stock(d.get("date", ""), d.get("ics_no", ""), d.get("type"))
+        if p:
+            d["stock_ok_prev"] = num(p.get("ok")); d["stock_ok_prev_source"] = p["date"]
+    return docs
 
 
 # ---------------------------------------------------------------------------
@@ -630,10 +665,11 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
     stock_dates = await db.smt_stock.distinct("date", dq)
     stock = await db.smt_stock.find({"date": max(stock_dates)}).to_list(10000) if stock_dates else []
 
-    smt_total = sum(num(x.get("total_smt")) for x in smt)
-    smt_plan = sum(num(x.get("planing")) for x in smt)
-    plan_assy = sum(num(x.get("total_plan")) for x in smt)
-    balance = smt_total - plan_assy
+    smt_total = sum(num(x.get("total_act_smt")) for x in smt)
+    smt_plan = sum(num(x.get("planing_smt")) for x in smt)
+    plan_assy = sum(num(x.get("plan_assy")) for x in smt)
+    assy_total = sum(num(x.get("total_act_assy")) for x in smt)
+    balance = smt_total - assy_total
     stock_ok = sum(num(x.get("ok")) for x in stock)
     stock_total = sum(num(x.get("total")) for x in stock)
     shortage_items = [clean(n) for n in needs if n.get("status") == "SHORTAGE"]
@@ -649,8 +685,8 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
 
     by_lane = {}
     for x in smt:
-        t = by_lane.setdefault(x.get("lane") or "-", {"lane": x.get("lane") or "-", "act_s3": 0, "act_s1": 0, "act_s2": 0})
-        for s in ("act_s3", "act_s1", "act_s2"):
+        t = by_lane.setdefault(x.get("lane") or "-", {"lane": x.get("lane") or "-", "act_smt_s3": 0, "act_smt_s1": 0, "act_smt_s2": 0})
+        for s in ("act_smt_s3", "act_smt_s1", "act_smt_s2"):
             t[s] += num(x.get(s))
 
     stock_breakdown = [
@@ -665,7 +701,8 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
         "kpi": {
             "smt_total": smt_total, "smt_items": len(smt), "smt_plan": smt_plan,
             "smt_achievement": round(smt_total / smt_plan * 100, 1) if smt_plan else 0.0,
-            "plan_assy": plan_assy, "balance": balance,
+            "plan_assy": plan_assy, "assy_total": assy_total, "balance": balance,
+            "assy_achievement": round(assy_total / plan_assy * 100, 1) if plan_assy else 0.0,
             "stock_ok": stock_ok, "stock_total": stock_total, "stock_items": len(stock),
             "stock_date": max(stock_dates) if stock_dates else None,
             "shortage_count": len(shortage_items), "needs_items": len(needs),
@@ -673,7 +710,7 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
             "variance_sum": sum(num(v.get("variance")) for v in var),
         },
         "stock_breakdown": stock_breakdown,
-        "smt_trend": trend(smt, {"plan": "planing", "actual": "total_smt", "plan_assy": "total_plan"}),
+        "smt_trend": trend(smt, {"plan": "planing_smt", "actual": "total_act_smt", "plan_assy": "plan_assy", "actual_assy": "total_act_assy"}),
         "smt_by_lane": sorted(by_lane.values(), key=lambda r: r["lane"]),
         "top_shortage": sorted(shortage_items, key=lambda n: n["blc"])[:6],
         "top_variance": sorted([clean(v) for v in variance_items], key=lambda v: abs(num(v.get("variance"))), reverse=True)[:6],
@@ -690,7 +727,7 @@ def header_map(module: str) -> Dict[str, str]:
         m[label.lower()] = key
     m["part number"] = "ics_no"; m["part_number"] = "ics_no"; m["ics no."] = "ics_no"; m["ics no"] = "ics_no"
     m["tanggal"] = "date"; m["keterangan"] = "reason"; m["reason"] = "reason"
-    for skip in ("cap/h", "total smt", "achv %", "total plan", "balance"):
+    for skip in ("cap/h", "total smt", "achv %", "total plan", "balance", "total act smt", "total act assy"):
         m[skip] = "__skip__"
     return m
 
@@ -850,6 +887,82 @@ async def read_notifications(body: ReadBody, user: dict = Depends(get_current_us
     return {"ok": True}
 
 
+# ---------------------------------------------------------------------------
+# BACKUP & RESTORE (.zip berisi JSON per modul)
+# ---------------------------------------------------------------------------
+BACKUP_COLLECTIONS = DATA_MODULES + ["users", "audit_log", "notifications"]
+RESTORE_COLLECTIONS = DATA_MODULES
+
+
+def to_jsonable(doc: dict) -> dict:
+    d = dict(doc)
+    d["_id"] = str(d["_id"])
+    return d
+
+
+@api.get("/backup/export")
+async def backup_export(user: dict = Depends(require_perm("backup", "write"))):
+    buf = io.BytesIO()
+    counts = {}
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for c in BACKUP_COLLECTIONS:
+            docs = [to_jsonable(d) for d in await db[c].find({}).to_list(100000)]
+            counts[c] = len(docs)
+            zf.writestr(f"{c}.json", json.dumps(docs, ensure_ascii=False, default=str))
+        zf.writestr("meta.json", json.dumps({"app": "Control Data Stock & Production", "version": 1,
+                                             "exported_at": datetime.now(timezone.utc).isoformat(),
+                                             "exported_by": user["name"], "counts": counts,
+                                             "modules": {c: MODULES.get(c, c) for c in BACKUP_COLLECTIONS}}, ensure_ascii=False))
+    buf.seek(0)
+    await log_audit(None, user, "BACKUP", "backup", note=f"Export {sum(counts.values())} dokumen")
+    fname = f"backup_cds_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    return StreamingResponse(buf, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+def read_backup(file_bytes: bytes, filename: str):
+    if not filename.lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="File backup harus berformat .zip (hasil export aplikasi ini)")
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(file_bytes))
+        names = set(zf.namelist())
+        if "meta.json" not in names:
+            raise ValueError("meta.json tidak ditemukan")
+        meta = json.loads(zf.read("meta.json"))
+        data = {c: json.loads(zf.read(f"{c}.json")) for c in RESTORE_COLLECTIONS if f"{c}.json" in names}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"File backup tidak valid: {e}")
+    if not data:
+        raise HTTPException(status_code=400, detail="Tidak ada data modul di dalam file backup")
+    return meta, data
+
+
+@api.post("/backup/preview")
+async def backup_preview(file: UploadFile = File(...), user: dict = Depends(require_perm("backup", "write"))):
+    meta, data = read_backup(await file.read(), file.filename)
+    current = {c: await db[c].count_documents({}) for c in data}
+    return {"meta": meta, "modules": [{"key": c, "label": MODULES.get(c, c), "in_backup": len(v), "current": current[c]} for c, v in data.items()]}
+
+
+@api.post("/backup/restore")
+async def backup_restore(request: Request, file: UploadFile = File(...), user: dict = Depends(require_perm("backup", "write"))):
+    meta, data = read_backup(await file.read(), file.filename)
+    result = {}
+    for c, docs in data.items():
+        for d in docs:
+            try:
+                d["_id"] = ObjectId(d["_id"])
+            except Exception:
+                d.pop("_id", None)
+        removed = (await db[c].delete_many({})).deleted_count
+        if docs:
+            await db[c].insert_many(docs)
+        result[c] = {"removed": removed, "restored": len(docs)}
+        await log_audit(request, user, "RESTORE", c, note=f"Restore dari {file.filename} ({meta.get('exported_at', '')[:19]}): {removed} dihapus, {len(docs)} dipulihkan")
+    return {"ok": True, "result": result}
+
+
 app.include_router(api)
 
 app.add_middleware(
@@ -864,7 +977,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Startup: indexes, admin seed, data seed dari DATA STOCK.xlsx
 # ---------------------------------------------------------------------------
-SEED_VERSION = 3
+SEED_VERSION = 4
 
 
 def read_csv_rows(path: Path):

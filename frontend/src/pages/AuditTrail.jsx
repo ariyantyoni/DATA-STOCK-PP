@@ -82,7 +82,7 @@ export default function AuditTrail() {
           <Input type="date" value={f.date_to || ""} onChange={(e) => set("date_to", e.target.value)} className="h-9 w-40 bg-secondary/60 border-border" data-testid="audit-date-to" /></div>
         <FSel label="User" value={f.user_id} onChange={(v) => set("user_id", v)} options={users.map((u) => ({ value: u.id, label: u.name }))} testId="audit-filter-user" />
         <FSel label="Aksi" value={f.action} onChange={(v) => set("action", v)} options={["CREATE", "UPDATE", "DELETE"].map((a) => ({ value: a, label: a }))} testId="audit-filter-action" />
-        <FSel label="Modul" value={f.module} onChange={(v) => set("module", v)} options={modules.filter((m) => !["users", "audit"].includes(m.key)).map((m) => ({ value: m.key, label: m.label }))} testId="audit-filter-module" />
+        <FSel label="Modul" value={f.module} onChange={(v) => set("module", v)} options={modules.filter((m) => !["users", "audit", "backup"].includes(m.key)).map((m) => ({ value: m.key, label: m.label }))} testId="audit-filter-module" />
         <div className="flex flex-col gap-1 flex-1 min-w-[160px]"><label className="text-[10px] font-mono-data uppercase tracking-wider text-muted-foreground">Cari</label>
           <Input value={f.search || ""} onChange={(e) => set("search", e.target.value)} placeholder="ICS No., type, nama user..." className="h-9 bg-secondary/60 border-border" data-testid="audit-search" /></div>
         {Object.values(f).some(Boolean) && <Button variant="ghost" size="sm" onClick={() => setF({})} className="h-9" data-testid="audit-reset"><X className="w-4 h-4 mr-1" /> Reset</Button>}

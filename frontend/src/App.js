@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/context/ThemeContext";
 import Layout from "@/components/Layout";
 import AuditTrail from "@/pages/AuditTrail";
 import Notifications from "@/pages/Notifications";
+import Backup from "@/pages/Backup";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import SMTProduction from "@/pages/SMTProduction";
@@ -63,6 +64,7 @@ function App() {
               <Route path="variance" element={<Guard module="variance"><Variance /></Guard>} />
               <Route path="items" element={<Guard module="items"><MasterItems /></Guard>} />
               <Route path="audit" element={<Guard module="audit"><AuditTrail /></Guard>} />
+              <Route path="backup" element={<Guard module="backup"><Backup /></Guard>} />
               <Route path="notifications" element={<Notifications />} />
               <Route path="users" element={<Guard module="users"><Users /></Guard>} />
             </Route>

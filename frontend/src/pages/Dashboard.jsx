@@ -102,8 +102,8 @@ export default function Dashboard() {
         <KpiCard testId="kpi-smt" icon={Cpu} label="Total Produksi SMT" value={fmtNum(k.smt_total)}
           sub={`Planing ${fmtNum(k.smt_plan)} · Achv ${fmtPct(k.smt_achievement)}`}
           accent={k.smt_achievement >= 100 ? "text-emerald-600" : "text-cyan-600"} />
-        <KpiCard testId="kpi-assy" icon={Lightbulb} label="Total Plan Assy" value={fmtNum(k.plan_assy)}
-          sub={`Balance ${k.balance > 0 ? "+" : ""}${fmtNum(k.balance)} pcs (SMT − Plan)`}
+        <KpiCard testId="kpi-assy" icon={Lightbulb} label="Total Act Assy" value={fmtNum(k.assy_total)}
+          sub={`Plan ${fmtNum(k.plan_assy)} · Achv ${fmtPct(k.assy_achievement)} · Balance ${k.balance > 0 ? "+" : ""}${fmtNum(k.balance)}`}
           accent={k.balance >= 0 ? "text-emerald-600" : "text-red-600"} />
         <KpiCard testId="kpi-shortage" icon={AlertTriangle} label="Item Shortage (BLC < 0)" value={fmtNum(k.shortage_count)}
           sub={`dari ${fmtNum(k.needs_items)} item kebutuhan`} accent={k.shortage_count > 0 ? "text-red-600" : "text-emerald-600"} />
@@ -119,7 +119,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Panel icon={TrendingUp} title="Trend Produksi SMT (Planing vs Actual vs Plan Assy)" className="lg:col-span-2">
+        <Panel icon={TrendingUp} title="Trend Produksi SMT & ASSY (Plan vs Actual)" className="lg:col-span-2">
           <ResponsiveContainer width="100%" height={280}>
             <AreaChart data={data.smt_trend}>
               <defs>
@@ -133,9 +133,10 @@ export default function Dashboard() {
               <YAxis tick={axis} />
               <Tooltip content={<TooltipBox />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Area type="monotone" dataKey="actual" name="Total SMT" stroke="#0ea5e9" fill="url(#gActual)" strokeWidth={2} />
-              <Area type="monotone" dataKey="plan" name="Planing" stroke="#f59e0b" fill="none" strokeWidth={2} strokeDasharray="4 4" />
-              <Area type="monotone" dataKey="plan_assy" name="Total Plan Assy" stroke="#f97316" fill="none" strokeWidth={2} />
+              <Area type="monotone" dataKey="actual" name="Total Act SMT" stroke="#0ea5e9" fill="url(#gActual)" strokeWidth={2} />
+              <Area type="monotone" dataKey="plan" name="Planing SMT" stroke="#0ea5e9" fill="none" strokeWidth={2} strokeDasharray="4 4" />
+              <Area type="monotone" dataKey="actual_assy" name="Total Act Assy" stroke="#f97316" fill="none" strokeWidth={2} />
+              <Area type="monotone" dataKey="plan_assy" name="Plan Assy" stroke="#f59e0b" fill="none" strokeWidth={2} strokeDasharray="4 4" />
             </AreaChart>
           </ResponsiveContainer>
         </Panel>
@@ -169,9 +170,9 @@ export default function Dashboard() {
               <YAxis tick={axis} />
               <Tooltip content={<TooltipBox />} cursor={{ fill: "var(--grid)" }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="act_s3" name="Shift 3" stackId="a" fill="#0369a1" />
-              <Bar dataKey="act_s1" name="Shift 1" stackId="a" fill="#38bdf8" />
-              <Bar dataKey="act_s2" name="Shift 2" stackId="a" fill="#0ea5e9" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="act_smt_s3" name="Shift 3" stackId="a" fill="#0369a1" />
+              <Bar dataKey="act_smt_s1" name="Shift 1" stackId="a" fill="#38bdf8" />
+              <Bar dataKey="act_smt_s2" name="Shift 2" stackId="a" fill="#0ea5e9" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </Panel>
