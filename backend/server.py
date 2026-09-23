@@ -51,9 +51,10 @@ ROLE_LABELS = {
 MODULES = {
     "smt_production": "Produksi SMT & ASSY",
     "smt_stock": "Stock SMT",
-    "production_needs": "Kebutuhan vs Stock",
+    "production_needs": "Kebutuhan Assy VS. Stock SMT",
     "variance": "Variance Stock",
     "items": "Master Item",
+    "stock_standards": "Standar Stock",
     "audit": "Audit Trail",
     "backup": "Backup & Restore",
     "users": "Manajemen User",
@@ -79,6 +80,7 @@ def effective_perms(user: dict) -> Dict[str, str]:
     base = dict(ROLE_DEFAULT_PERMS.get(user.get("role"), {}))
     base.setdefault("audit", "none")
     base.setdefault("backup", "none")
+    base.setdefault("stock_standards", base.get("items", "none"))
     for m, lvl in (user.get("permissions") or {}).items():
         if m in MODULES and lvl in LEVELS:
             base[m] = lvl
@@ -177,7 +179,7 @@ def r1(v):
 # ---------------------------------------------------------------------------
 # Audit trail & notifications
 # ---------------------------------------------------------------------------
-DATA_MODULES = ["smt_production", "smt_stock", "production_needs", "variance", "items"]
+DATA_MODULES = ["smt_production", "smt_stock", "production_needs", "variance", "items", "stock_standards"]
 
 
 def client_info(request: Optional[Request]):
@@ -246,7 +248,7 @@ FIELDS = {
         ("act_smt_s3", "ACT SMT S3", True), ("act_smt_s1", "ACT SMT S1", True), ("act_smt_s2", "ACT SMT S2", True),
         ("plan_assy", "PLAN ASSY", True),
         ("act_assy_s3", "ACT ASSY S3", True), ("act_assy_s1", "ACT ASSY S1", True), ("act_assy_s2", "ACT ASSY S2", True)],
-    "smt_stock": BASE_FIELDS + [
+    "smt_stock": [("date", "Tanggal", False), ("lane", "Lane", False), ("product", "Product", False), ("type", "Type", False), ("ics_no", "ICS No.", False)] + [
         ("stock_ok_prev", "Stock OK SMT Kemarin", True), ("coating", "Coating", True),
         ("belum_cutting", "Belum Cutting", True), ("belum_ict", "Belum ICT", True),
         ("belum_fct", "Belum FCT", True), ("ok", "OK", True), ("tray", "Tray", False)],
@@ -258,8 +260,14 @@ FIELDS = {
         ("assy3", "Assy Shift 3", True), ("actual_total_stock", "Actual Total Stock", True),
         ("reason", "Keterangan", False)],
     "items": [("lane", "Lane", False), ("product", "Product", False), ("type", "Type", False), ("ics_no", "ICS No.", False),
-              ("tt", "T/T (detik)", True), ("led_rank", "LED Rank", False), ("tray", "Tray", False)],
+              ("tt", "T/T (detik)", True), ("tt_assy", "T/T Assy (detik/unit)", True), ("material_per_unit", "Kebutuhan Material per Unit Assy", True),
+              ("led_rank", "LED Rank", False), ("tray", "Tray", False)],
+    "stock_standards": [("product", "Product", False), ("lane", "Lane", False), ("standard_stock", "Standart Stock", True)],
 }
+
+
+def compute_standard(d: dict) -> dict:
+    return d
 
 
 def compute_item(d: dict) -> dict:
@@ -313,6 +321,7 @@ DATASETS = {
     "production-needs": {"module": "production_needs", "compute": compute_needs, "sort": [("date", -1), ("lane", 1)]},
     "variance": {"module": "variance", "compute": compute_variance, "sort": [("date", -1), ("lane", 1)]},
     "items": {"module": "items", "compute": compute_item, "sort": [("lane", 1), ("type", 1)], "no_date": True},
+    "stock-standards": {"module": "stock_standards", "compute": compute_standard, "sort": [("product", 1), ("lane", 1)], "no_date": True, "key": ["product", "lane"]},
 }
 
 
@@ -323,6 +332,8 @@ def normalize(module: str, body: dict) -> dict:
         d[key] = num(v) if is_num else ("" if v is None or str(v) == "nan" else " ".join(str(v).split()))
     if d.get("ics_no", "").isdigit():
         d["ics_no"] = d["ics_no"].zfill(10)
+    if module == "items":
+        d["material_per_unit"] = num(body.get("material_per_unit"), 1.0) or 1.0
     if module == "smt_stock":
         d["stock_ok_manual"] = bool(body.get("stock_ok_manual"))
     if module == "smt_stock" or module == "variance":
@@ -516,7 +527,7 @@ def build_query(p: dict) -> dict:
         if p.get("date_to"):
             rng["$lte"] = p["date_to"]
         q["date"] = rng
-    for k in ("lane", "type", "ics_no"):
+    for k in ("lane", "type", "ics_no", "product"):
         if p.get(k):
             q[k] = p[k]
     if p.get("search"):
@@ -533,31 +544,45 @@ def register_crud(dataset: str):
     @api.get(f"/{dataset}")
     async def list_items(date_from: Optional[str] = None, date_to: Optional[str] = None,
                          lane: Optional[str] = None, type: Optional[str] = None, ics_no: Optional[str] = None,
+                         product: Optional[str] = None,
                          status: Optional[str] = None, search: Optional[str] = None,
                          user: dict = Depends(require_perm(module, "read"))):
-        q = build_query({"date_from": date_from, "date_to": date_to, "lane": lane, "type": type,
-                         "ics_no": ics_no, "search": search})
-        docs = await coll.find(q).sort(cfg["sort"]).to_list(5000)
-        out = [clean(d) for d in docs]
-        if module == "smt_stock":
-            out = await link_stock_prev(out)
+        p = {"date_from": date_from, "date_to": date_to, "lane": lane, "type": type, "ics_no": ics_no, "search": search}
+        if module == "production_needs":
+            out = await needs_view(p, product)
+        elif module == "variance":
+            out = await variance_view(p, product)
+        else:
+            docs = await coll.find(build_query(p)).sort(cfg["sort"]).to_list(5000)
+            out = [clean(d) for d in docs]
+            if module == "smt_stock":
+                out = await enrich_stock(out)
+            if product:
+                out = [o for o in out if o.get("product") == product]
         if status:
-            out = [o for o in out if o.get("status") == status or o.get("variance_status") == status]
+            out = [o for o in out if o.get("status") == status or o.get("variance_status") == status or o.get("indikator") == status]
         return out
 
     @api.post(f"/{dataset}")
     async def create_item(body: dict, request: Request, user: dict = Depends(require_perm(module, "write"))):
         force = bool(body.get("force"))
         d = normalize(module, body)
-        if not d.get("ics_no") or (not cfg.get("no_date") and not d.get("date")):
+        if not cfg.get("key") and (not d.get("ics_no") or (not cfg.get("no_date") and not d.get("date"))):
             raise HTTPException(status_code=400, detail="Tanggal dan ICS No. wajib diisi")
-        key = {"ics_no": d["ics_no"], "type": d["type"]} if cfg.get("no_date") else {"date": d["date"], "ics_no": d["ics_no"], "type": d["type"]}
+        if cfg.get("key"):
+            key = {k: d.get(k, "") for k in cfg["key"]}
+            if not all(key.values()):
+                raise HTTPException(status_code=400, detail="Product dan Lane wajib diisi")
+        elif cfg.get("no_date"):
+            key = {"ics_no": d["ics_no"], "type": d["type"]}
+        else:
+            key = {"date": d["date"], "ics_no": d["ics_no"], "type": d["type"]}
         existing = await coll.find_one(key)
         if existing and not force:
             when = f" pada {d['date']}" if d.get("date") else ""
             raise HTTPException(status_code=409, detail={
                 "code": "DUPLICATE", "existing_id": str(existing["_id"]),
-                "message": f"Data {d['ics_no']} ({d['type']}){when} sudah ada. Apakah Anda ingin memperbarui data yang ada atau membatalkan?"})
+                "message": f"Data {d.get('ics_no') or d.get('product')} ({d.get('type') or d.get('lane')}){when} sudah ada. Apakah Anda ingin memperbarui data yang ada atau membatalkan?"})
         if existing:
             before = clean(existing)
             stamp(d, user, False)
@@ -569,7 +594,7 @@ def register_crud(dataset: str):
         res = await coll.insert_one(d)
         d["id"] = str(res.inserted_id); d.pop("_id", None)
         await log_audit(request, user, "CREATE", module, d["id"], None, d)
-        await notify_users(user, module, f"Data {MODULES[module]} baru ({d['ics_no']} · {d['type']}) telah diinput oleh {user['name']} pada {fmt_ts(d['created_at'])}. Silakan cek dashboard.")
+        await notify_users(user, module, f"Data {MODULES[module]} baru ({d.get('ics_no') or d.get('product')} · {d.get('type') or d.get('lane')}) telah diinput oleh {user['name']} pada {fmt_ts(d['created_at'])}. Silakan cek dashboard.")
         return d
 
     @api.put(f"/{dataset}/{{rid}}")
@@ -635,6 +660,128 @@ async def link_stock_prev(docs: list) -> list:
 
 
 # ---------------------------------------------------------------------------
+# Integrasi antar-modul (PRODUCT mapping, standar stock, view Kebutuhan & Variance)
+# ---------------------------------------------------------------------------
+async def product_map() -> dict:
+    m = {}
+    for it in await db.items.find({}, {"ics_no": 1, "type": 1, "product": 1, "tt_assy": 1, "material_per_unit": 1}).to_list(10000):
+        m[(it.get("ics_no"), it.get("type"))] = it
+        m.setdefault((it.get("ics_no"), None), it)
+    return m
+
+
+def item_of(pm: dict, ics: str, typ: str):
+    return pm.get((ics, typ)) or pm.get((ics, None)) or {}
+
+
+def fill_product(doc: dict, pm: dict) -> dict:
+    if not doc.get("product"):
+        doc["product"] = item_of(pm, doc.get("ics_no"), doc.get("type")).get("product") or ""
+    return doc
+
+
+async def standards_map() -> dict:
+    return {(s.get("product"), s.get("lane")): num(s.get("standard_stock")) for s in await db.stock_standards.find({}).to_list(5000)}
+
+
+def indikator(total, std):
+    if std is None:
+        return "BELUM DISET"
+    if total is None:
+        return "BELUM DICEK"
+    return "PASS" if total == std else ("MINUS" if total < std else "OVER")
+
+
+async def enrich_stock(docs: list) -> list:
+    pm, sm = await product_map(), await standards_map()
+    docs = await link_stock_prev(docs)
+    for d in docs:
+        fill_product(d, pm)
+        std = sm.get((d.get("product"), d.get("lane")))
+        d["standard_stock"] = std
+        d["indikator"] = indikator(num(d.get("total")), std)
+    return docs
+
+
+async def needs_view(p: dict, product: Optional[str]) -> list:
+    prods = await db.smt_production.find(build_query(p)).sort([("date", -1), ("lane", 1)]).to_list(5000)
+    dates = sorted({x["date"] for x in prods})
+    stocks = await db.smt_stock.find({"date": {"$in": dates}}).to_list(10000) if dates else []
+    sm = {(s["date"], s.get("ics_no"), s.get("type")): s for s in stocks}
+    sm_ics = {}
+    for s in stocks:
+        sm_ics.setdefault((s["date"], s.get("ics_no")), s)
+    pm = await product_map()
+    out = []
+    for x in prods:
+        r = fill_product(clean(x), pm)
+        if product and r.get("product") != product:
+            continue
+        it = item_of(pm, r.get("ics_no"), r.get("type"))
+        st = sm.get((r["date"], r.get("ics_no"), r.get("type"))) or sm_ics.get((r["date"], r.get("ics_no")))
+        stock = num(st.get("total")) if st else None
+        planing, plan_assy = num(r.get("planing_smt")), num(r.get("plan_assy"))
+        tt_assy = num(it.get("tt_assy")) or None
+        mpu = num(it.get("material_per_unit"), 1.0) or 1.0
+        active = planing > 0 or plan_assy > 0
+        if not active or stock is None or not tt_assy:
+            ws = None
+        else:
+            ws = 0.0 if stock <= 0 else round(stock / mpu * tt_assy / 3600, 2)
+        blc = None if stock is None else r1(stock - plan_assy)
+        out.append({
+            "id": r["id"], "date": r["date"], "lane": r.get("lane"), "product": r.get("product"), "type": r.get("type"),
+            "ics_no": r.get("ics_no"), "planing_smt": planing, "kondisi_produksi": "ON" if planing > 0 else "OFF",
+            "plan_assy": plan_assy, "stock_ok_today": stock, "stock_id": str(st["_id"]) if st else None,
+            "tt_assy": tt_assy, "material_per_unit": mpu, "waktu_shortage": ws, "blc": blc,
+            "fulfillment": (round(stock / plan_assy * 100, 1) if plan_assy else 100.0) if stock is not None else None,
+            "status": "BELUM DICEK" if stock is None else ("SHORTAGE" if blc < 0 else ("PAS" if blc == 0 else "CUKUP")),
+        })
+    return out
+
+
+async def variance_view(p: dict, product: Optional[str]) -> list:
+    stocks = await db.smt_stock.find(build_query(p)).sort([("date", -1), ("lane", 1)]).to_list(5000)
+    all_stock = await db.smt_stock.find({}, {"date": 1, "ics_no": 1, "type": 1, "total": 1}).to_list(20000)
+    hist = {}
+    for s in all_stock:
+        hist.setdefault((s.get("ics_no"), s.get("type")), []).append((s["date"], num(s.get("total"))))
+    dates = sorted({x["date"] for x in stocks})
+    prods = await db.smt_production.find({"date": {"$in": dates}}).to_list(10000) if dates else []
+    pmap = {(x["date"], x.get("ics_no"), x.get("type")): x for x in prods}
+    pmap_ics = {}
+    for x in prods:
+        pmap_ics.setdefault((x["date"], x.get("ics_no")), x)
+    pm = await product_map()
+    out = []
+    for s in stocks:
+        r = fill_product(clean(s), pm)
+        if product and r.get("product") != product:
+            continue
+        prev = [t for d, t in hist.get((r.get("ics_no"), r.get("type")), []) if d < r["date"]]
+        prev_total = None
+        if prev:
+            prev_total = max(((d, t) for d, t in hist[(r.get("ics_no"), r.get("type"))] if d < r["date"]), key=lambda z: z[0])[1]
+        pr = pmap.get((r["date"], r.get("ics_no"), r.get("type"))) or pmap_ics.get((r["date"], r.get("ics_no")))
+        smt_total = num(pr.get("total_act_smt")) if pr else 0.0
+        assy_total = num(pr.get("total_act_assy")) if pr else 0.0
+        actual = num(r.get("total"))
+        if prev_total is None:
+            sistem = var = pct = None; status = "BELUM DICEK"
+        else:
+            sistem = r1(prev_total + smt_total - assy_total); var = r1(actual - sistem)
+            pct = round(var / sistem * 100, 2) if sistem else 0.0
+            status = "OK" if var == 0 else ("VARIANCE -" if var < 0 else "VARIANCE +")
+        out.append({
+            "id": r["id"], "date": r["date"], "lane": r.get("lane"), "product": r.get("product"), "type": r.get("type"),
+            "ics_no": r.get("ics_no"), "total_stock_prev": prev_total, "smt_total": smt_total, "assy_total": assy_total,
+            "has_production": bool(pr), "actual_total_stock": actual, "stock_sistem": sistem, "variance": var,
+            "variance_pct": pct, "variance_status": status,
+        })
+    return out
+
+
+# ---------------------------------------------------------------------------
 # META options
 # ---------------------------------------------------------------------------
 @api.get("/meta/options")
@@ -645,25 +792,32 @@ async def meta_options(user: dict = Depends(get_current_user)):
         types |= {x for x in await db[m].distinct("type") if x}
         ics |= {x for x in await db[m].distinct("ics_no") if x}
     return {"lanes": sorted(lanes), "types": sorted(types), "ics_nos": sorted(ics),
+            "products": sorted({x for x in await db.items.distinct("product") if x} | {x for x in await db.smt_production.distinct("product") if x}),
             "stock_status": ["OK", "WIP", "KOSONG"],
+            "indikator": ["PASS", "MINUS", "OVER", "BELUM DISET"],
             "lamp_status": ["SELESAI", "PROSES", "BELUM MULAI"],
-            "needs_status": ["CUKUP", "PAS", "SHORTAGE"],
-            "variance_status": ["OK", "SURPLUS", "SHORTAGE"]}
+            "needs_status": ["CUKUP", "PAS", "SHORTAGE", "BELUM DICEK"],
+            "variance_status": ["OK", "VARIANCE +", "VARIANCE -", "BELUM DICEK"]}
 
 
 # ---------------------------------------------------------------------------
 # DASHBOARD
 # ---------------------------------------------------------------------------
 @api.get("/dashboard/summary")
-async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[str] = None,
+async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[str] = None, product: Optional[str] = None,
                             user: dict = Depends(get_current_user)):
     dq = build_query({"date_from": date_from, "date_to": date_to})
+    p = {"date_from": date_from, "date_to": date_to}
     smt = await db.smt_production.find(dq).to_list(10000)
-    needs = await db.production_needs.find(dq).to_list(10000)
-    var = await db.variance.find(dq).to_list(10000)
+    needs = await needs_view(p, product)
+    var = await variance_view(p, product)
 
     stock_dates = await db.smt_stock.distinct("date", dq)
-    stock = await db.smt_stock.find({"date": max(stock_dates)}).to_list(10000) if stock_dates else []
+    stock = await enrich_stock([clean(s) for s in await db.smt_stock.find({"date": max(stock_dates)}).to_list(10000)]) if stock_dates else []
+    if product:
+        pm = await product_map()
+        smt = [x for x in smt if fill_product(x, pm).get("product") == product]
+        stock = [x for x in stock if x.get("product") == product]
 
     smt_total = sum(num(x.get("total_act_smt")) for x in smt)
     smt_plan = sum(num(x.get("planing_smt")) for x in smt)
@@ -672,8 +826,8 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
     balance = smt_total - assy_total
     stock_ok = sum(num(x.get("ok")) for x in stock)
     stock_total = sum(num(x.get("total")) for x in stock)
-    shortage_items = [clean(n) for n in needs if n.get("status") == "SHORTAGE"]
-    variance_items = [v for v in var if num(v.get("variance")) != 0]
+    shortage_items = [n for n in needs if n.get("status") == "SHORTAGE"]
+    variance_items = [v for v in var if v.get("variance") not in (None, 0)]
 
     def trend(rows, keys):
         m = {}
@@ -713,7 +867,7 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
         "smt_trend": trend(smt, {"plan": "planing_smt", "actual": "total_act_smt", "plan_assy": "plan_assy", "actual_assy": "total_act_assy"}),
         "smt_by_lane": sorted(by_lane.values(), key=lambda r: r["lane"]),
         "top_shortage": sorted(shortage_items, key=lambda n: n["blc"])[:6],
-        "top_variance": sorted([clean(v) for v in variance_items], key=lambda v: abs(num(v.get("variance"))), reverse=True)[:6],
+        "top_variance": sorted(variance_items, key=lambda v: abs(num(v.get("variance"))), reverse=True)[:6],
     }
 
 
@@ -794,9 +948,10 @@ async def import_preview(dataset: str, file: UploadFile = File(...), user: dict 
     no_date = DATASETS[dataset].get("no_date")
     duplicates = 0
     for r in rows:
-        if not r.get("ics_no"):
+        if not r.get("ics_no") and not DATASETS[dataset].get("key"):
             continue
-        key = {"ics_no": r["ics_no"], "type": r["type"]} if no_date else {"date": r.get("date"), "ics_no": r["ics_no"], "type": r["type"]}
+        ck = DATASETS[dataset].get("key")
+        key = {k: r.get(k, "") for k in ck} if ck else ({"ics_no": r["ics_no"], "type": r["type"]} if no_date else {"date": r.get("date"), "ics_no": r["ics_no"], "type": r["type"]})
         if await db[module].find_one(key):
             duplicates += 1; r["_duplicate"] = True
     columns = [k for k, _, _ in FIELDS[module]] + [k for k in rows[0].keys() if rows and k not in [f[0] for f in FIELDS[module]]] if rows else []
@@ -820,10 +975,17 @@ async def import_confirm(dataset: str, request: Request, file: UploadFile = File
     inserted = updated = skipped = 0
     no_date = DATASETS[dataset].get("no_date")
     for r in rows:
-        if not r.get("ics_no") or (not no_date and not r.get("date")):
+        ck = DATASETS[dataset].get("key")
+        if ck:
+            if not all(r.get(k) for k in ck):
+                skipped += 1
+                continue
+            key = {k: r.get(k) for k in ck}
+        elif not r.get("ics_no") or (not no_date and not r.get("date")):
             skipped += 1
             continue
-        key = {"ics_no": r["ics_no"], "type": r["type"]} if no_date else {"date": r["date"], "ics_no": r["ics_no"], "type": r["type"]}
+        else:
+            key = {"ics_no": r["ics_no"], "type": r["type"]} if no_date else {"date": r["date"], "ics_no": r["ics_no"], "type": r["type"]}
         existing = await db[module].find_one(key)
         if existing:
             stamp(r, user, False)

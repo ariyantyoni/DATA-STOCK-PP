@@ -5,7 +5,7 @@ import { Search, X } from "lucide-react";
 
 const ALL = "__all__";
 
-function FSelect({ label, value, onChange, options, testId }) {
+function FSelect({ label, value, onChange, options, testId, allLabel = "Semua" }) {
   return (
     <div className="flex flex-col gap-1">
       <label className="text-[10px] font-mono-data uppercase tracking-wider text-muted-foreground">{label}</label>
@@ -14,7 +14,7 @@ function FSelect({ label, value, onChange, options, testId }) {
           <SelectValue placeholder="Semua" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={ALL}>Semua</SelectItem>
+          <SelectItem value={ALL}>{allLabel}</SelectItem>
           {options.map((o) => (
             <SelectItem key={o} value={o}>{o}</SelectItem>
           ))}
@@ -45,11 +45,13 @@ export default function FilterBar({ filters, values, setValues, options }) {
           </div>
         </>
       )}
+      {filters.includes("product") && <FSelect label="Product" value={values.product} onChange={(v) => set("product", v)} options={options.products || []} testId="filter-product" allLabel="ALL PRODUCT" />}
       {filters.includes("lane") && <FSelect label="Lane / Line" value={values.lane} onChange={(v) => set("lane", v)} options={options.lanes || []} testId="filter-lane" />}
       {filters.includes("lamp_line") && <FSelect label="Line" value={values.lane} onChange={(v) => set("lane", v)} options={options.lamp_lines || []} testId="filter-lamp-line" />}
       {filters.includes("shift") && <FSelect label="Shift" value={values.shift} onChange={(v) => set("shift", v)} options={options.shifts || []} testId="filter-shift" />}
       {filters.includes("type") && <FSelect label="Type / Model" value={values.type} onChange={(v) => set("type", v)} options={options.types || []} testId="filter-type" />}
       {filters.includes("ics_no") && <FSelect label="ICS No." value={values.ics_no} onChange={(v) => set("ics_no", v)} options={options.ics_nos || []} testId="filter-ics-no" />}
+      {filters.includes("indikator") && <FSelect label="Indikator" value={values.status} onChange={(v) => set("status", v)} options={options.indikator || []} testId="filter-status" />}
       {filters.includes("stock_status") && <FSelect label="Status Stock" value={values.status} onChange={(v) => set("status", v)} options={options.stock_status || []} testId="filter-status" />}
       {filters.includes("lamp_status") && <FSelect label="Status" value={values.status} onChange={(v) => set("status", v)} options={options.lamp_status || []} testId="filter-status" />}
       {filters.includes("needs_status") && <FSelect label="Status" value={values.status} onChange={(v) => set("status", v)} options={options.needs_status || []} testId="filter-status" />}

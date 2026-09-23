@@ -20,7 +20,7 @@ const ROLE_BADGE = {
   assembly: "bg-orange-500/10 text-orange-600 border-orange-500/30",
 };
 const LEVEL_DOT = { none: "bg-slate-600", read: "bg-sky-500", write: "bg-emerald-500" };
-const SHORT = { smt_production: "SMT", smt_stock: "STOCK", production_needs: "KEBUTUHAN", variance: "VARIANCE", items: "ITEM", audit: "AUDIT", backup: "BACKUP", users: "USER" };
+const SHORT = { smt_production: "SMT", smt_stock: "STOCK", production_needs: "KEBUTUHAN", variance: "VARIANCE", items: "ITEM", stock_standards: "STD", audit: "AUDIT", backup: "BACKUP", users: "USER" };
 
 export default function Users() {
   const { user: me, setUser } = useAuth();

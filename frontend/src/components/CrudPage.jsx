@@ -16,10 +16,10 @@ import { cn } from "@/lib/utils";
 
 export default function CrudPage({
   title, subtitle, icon: Icon, endpoint, dataset, module,
-  columns, formFields, filters, options, refreshOptions, itemPicker = true,
+  columns, formFields, filters, options, refreshOptions, itemPicker = true, readOnly = false, hideAudit = false, note,
 }) {
   const { user } = useAuth();
-  const writable = canWrite(user, module);
+  const writable = !readOnly && canWrite(user, module);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [values, setValues] = useState({});
@@ -34,7 +34,8 @@ export default function CrudPage({
     { key: "created_by_name", label: "Diinput oleh" },
     { key: "created_at", label: "Waktu Input", type: "datetime" },
   ];
-  const allColumns = [...columns, ...AUDIT_COLS];
+  const allColumns = hideAudit ? columns : [...columns, ...AUDIT_COLS];
+  const sumCols = allColumns.filter((c) => c.sum);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -104,6 +105,8 @@ export default function CrudPage({
   const renderCell = (col, row) => {
     const v = row[col.key];
     if (col.type === "status") return <StatusBadge status={v} testId={`row-status-${row.id}`} />;
+    if (v === null || v === undefined) return <span className="text-muted-foreground font-mono-data">{col.na || "-"}</span>;
+    if (col.type === "hours") return <span className="font-mono-data">{fmtNum(v)} jam</span>;
     if (col.type === "number") return <span className="font-mono-data">{fmtNum(v)}</span>;
     if (col.type === "percent")
       return <span className={cn("font-mono-data", col.tone && (Number(v) >= 100 ? "text-emerald-600" : Number(v) >= 85 ? "text-amber-600" : "text-red-600"))}>{fmtPct(v)}</span>;
@@ -180,10 +183,22 @@ export default function CrudPage({
                 ))
               )}
             </tbody>
+            {!loading && rows.length > 0 && sumCols.length > 0 && (
+              <tfoot>
+                <tr className="bg-secondary/80 border-t-2 border-border font-semibold" data-testid="table-totals">
+                  {allColumns.map((c, i) => (
+                    <td key={c.key} className={cn("px-4 py-2.5 font-mono-data text-xs whitespace-nowrap border-r border-border/70 last:border-r-0", c.align === "right" && "text-right")}>
+                      {i === 0 ? `TOTAL (${rows.length})` : c.sum ? fmtNum(rows.reduce((a, r) => a + (Number(r[c.key]) || 0), 0)) : ""}
+                    </td>
+                  ))}
+                  {writable && <td className="border-l border-border/70" />}
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
         {!loading && rows.length > 0 && (
-          <div className="px-4 py-2.5 border-t border-border text-xs font-mono-data text-muted-foreground">{rows.length} baris</div>
+          <div className="px-4 py-2.5 border-t border-border text-xs font-mono-data text-muted-foreground">{rows.length} baris{note ? ` · ${note}` : ""}</div>
         )}
       </div>
 

@@ -11,6 +11,8 @@ export default function MasterItems() {
     { key: "ics_no", label: "ICS No.", mono: true },
     { key: "tt", label: "T/T (detik)", type: "number", align: "right" },
     { key: "cap_h", label: "CAP/H", type: "number", align: "right" },
+    { key: "tt_assy", label: "T/T Assy (dtk/unit)", type: "number", align: "right", na: "N/A" },
+    { key: "material_per_unit", label: "Material / Unit Assy", type: "number", align: "right" },
     { key: "led_rank", label: "LED Rank" },
     { key: "tray", label: "Tray" },
   ];
@@ -20,6 +22,8 @@ export default function MasterItems() {
     { key: "type", label: "Type", type: "text", required: true },
     { key: "ics_no", label: "ICS No.", type: "text", required: true },
     { key: "tt", label: "T/T (detik) — CAP/H = 3600 / T/T", type: "number" },
+    { key: "tt_assy", label: "T/T Assy (detik/unit) — untuk Waktu Shortage", type: "number" },
+    { key: "material_per_unit", label: "Kebutuhan Material SMT per Unit Assy (default 1)", type: "number" },
     { key: "led_rank", label: "LED Rank", type: "text" },
     { key: "tray", label: "Tray", type: "text" },
   ];
@@ -27,6 +31,6 @@ export default function MasterItems() {
     <CrudPage title="Master Item" subtitle="Daftar Lane / Type / ICS No. / T-T — dipakai untuk memilih item di semua form input"
       icon={Package} endpoint="/items" dataset="items" module="items" itemPicker={false}
       columns={columns} formFields={formFields}
-      filters={["lane", "type", "ics_no"]} options={options} refreshOptions={refresh} />
+      filters={["product", "lane", "type", "ics_no"]} options={options} refreshOptions={refresh} />
   );
 }

@@ -56,7 +56,9 @@ function Panel({ icon: Icon, title, tone = "text-primary", children, className }
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [range, setRange] = useState({ date_from: "", date_to: "" });
+  const [range, setRange] = useState({ date_from: "", date_to: "", product: "" });
+  const [products, setProducts] = useState([]);
+  useEffect(() => { api.get("/meta/options").then((r) => setProducts(r.data.products || [])).catch(() => {}); }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,6 +66,7 @@ export default function Dashboard() {
       const params = {};
       if (range.date_from) params.date_from = range.date_from;
       if (range.date_to) params.date_to = range.date_to;
+      if (range.product) params.product = range.product;
       const { data } = await api.get("/dashboard/summary", { params });
       setData(data);
     } finally {
@@ -86,7 +89,15 @@ export default function Dashboard() {
           <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight">Dashboard Kontrol Produksi</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Ringkasan produksi SMT & ASSY, stock SMT, kebutuhan (BLC), dan variance</p>
         </div>
-        <div className="flex items-end gap-2">
+        <div className="flex items-end gap-2 flex-wrap">
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-mono-data uppercase tracking-wider text-muted-foreground">Product</label>
+            <select value={range.product} onChange={(e) => setRange((p) => ({ ...p, product: e.target.value }))} data-testid="dash-product"
+              className="h-9 w-40 rounded-md border border-border bg-secondary/60 px-2 text-sm">
+              <option value="">ALL PRODUCT</option>
+              {products.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-mono-data uppercase tracking-wider text-muted-foreground">Dari</label>
             <Input type="date" value={range.date_from} onChange={(e) => setRange((p) => ({ ...p, date_from: e.target.value }))} className="h-9 w-36 bg-secondary/60 border-border" data-testid="dash-date-from" />
