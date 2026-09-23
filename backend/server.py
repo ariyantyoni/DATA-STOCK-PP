@@ -262,7 +262,7 @@ FIELDS = {
     "items": [("lane", "Lane", False), ("product", "Product", False), ("type", "Type", False), ("ics_no", "ICS No.", False),
               ("tt", "T/T (detik)", True), ("tt_assy", "T/T Assy (detik/unit)", True), ("material_per_unit", "Kebutuhan Material per Unit Assy", True),
               ("led_rank", "LED Rank", False), ("tray", "Tray", False)],
-    "stock_standards": [("product", "Product", False), ("lane", "Lane", False), ("standard_stock", "Standart Stock", True)],
+    "stock_standards": [("lane", "Lane", False), ("product", "Product", False), ("type", "Type", False), ("standard_stock", "Standart Stock", True)],
 }
 
 
@@ -321,7 +321,7 @@ DATASETS = {
     "production-needs": {"module": "production_needs", "compute": compute_needs, "sort": [("date", -1), ("lane", 1)]},
     "variance": {"module": "variance", "compute": compute_variance, "sort": [("date", -1), ("lane", 1)]},
     "items": {"module": "items", "compute": compute_item, "sort": [("lane", 1), ("type", 1)], "no_date": True},
-    "stock-standards": {"module": "stock_standards", "compute": compute_standard, "sort": [("product", 1), ("lane", 1)], "no_date": True, "key": ["product", "lane"]},
+    "stock-standards": {"module": "stock_standards", "compute": compute_standard, "sort": [("lane", 1), ("product", 1), ("type", 1)], "no_date": True, "key": ["lane", "product", "type"]},
 }
 
 
@@ -572,7 +572,7 @@ def register_crud(dataset: str):
         if cfg.get("key"):
             key = {k: d.get(k, "") for k in cfg["key"]}
             if not all(key.values()):
-                raise HTTPException(status_code=400, detail="Product dan Lane wajib diisi")
+                raise HTTPException(status_code=400, detail="Lane, Product dan Type wajib diisi")
         elif cfg.get("no_date"):
             key = {"ics_no": d["ics_no"], "type": d["type"]}
         else:
@@ -681,7 +681,7 @@ def fill_product(doc: dict, pm: dict) -> dict:
 
 
 async def standards_map() -> dict:
-    return {(s.get("product"), s.get("lane")): num(s.get("standard_stock")) for s in await db.stock_standards.find({}).to_list(5000)}
+    return {(s.get("lane"), s.get("product"), s.get("type")): num(s.get("standard_stock")) for s in await db.stock_standards.find({}).to_list(5000)}
 
 
 def indikator(total, std):
@@ -697,7 +697,7 @@ async def enrich_stock(docs: list) -> list:
     docs = await link_stock_prev(docs)
     for d in docs:
         fill_product(d, pm)
-        std = sm.get((d.get("product"), d.get("lane")))
+        std = sm.get((d.get("lane"), d.get("product"), d.get("type")))
         d["standard_stock"] = std
         d["indikator"] = indikator(num(d.get("total")), std)
     return docs
