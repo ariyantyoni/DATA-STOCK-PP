@@ -16,9 +16,9 @@ export default function ProductionNeeds() {
     { key: "blc", label: "BLC", type: "signed", align: "right" },
     { key: "tt_assy", label: "T/T Assy (dtk/unit)", type: "number", align: "right", na: "N/A" },
     { key: "material_per_unit", label: "Material / Unit", type: "number", align: "right" },
+    { key: "status", label: "Status", type: "status" },
     { key: "waktu_shortage", label: "Waktu Shortage", type: "hours", align: "right", na: "N/A" },
     { key: "kondisi_produksi", label: "Kondisi Produksi", type: "status" },
-    { key: "status", label: "Status", type: "status" },
   ];
   return (
     <CrudPage title="Kebutuhan Assy VS. Stock SMT"
