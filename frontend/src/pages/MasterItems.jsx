@@ -14,7 +14,6 @@ export default function MasterItems() {
     { key: "tt_assy", label: "T/T Assy (dtk/unit)", type: "number", align: "right", na: "N/A" },
     { key: "material_per_unit", label: "Material / Unit Assy", type: "number", align: "right" },
     { key: "led_rank", label: "LED Rank" },
-    { key: "tray", label: "Tray" },
   ];
   const formFields = [
     { key: "lane", label: "Lane", type: "text", required: true },
@@ -25,7 +24,6 @@ export default function MasterItems() {
     { key: "tt_assy", label: "T/T Assy (detik/unit) — untuk Waktu Shortage", type: "number" },
     { key: "material_per_unit", label: "Kebutuhan Material SMT per Unit Assy (default 1)", type: "number" },
     { key: "led_rank", label: "LED Rank", type: "text" },
-    { key: "tray", label: "Tray", type: "text" },
   ];
   return (
     <CrudPage title="Master Item" subtitle="Daftar Lane / Type / ICS No. / T-T — dipakai untuk memilih item di semua form input"

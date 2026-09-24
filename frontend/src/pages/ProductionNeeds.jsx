@@ -11,13 +11,13 @@ export default function ProductionNeeds() {
     { key: "type", label: "Type" },
     { key: "ics_no", label: "ICS No.", mono: true },
     { key: "planing_smt", label: "Planing SMT", type: "number", align: "right", sum: true },
-    { key: "kondisi_produksi", label: "Kondisi Produksi", type: "status" },
     { key: "plan_assy", label: "Plan Assy", type: "number", align: "right", sum: true },
-    { key: "stock_ok_today", label: "Stock OK Hari Ini", type: "strong", align: "right", sum: true, na: "BELUM ADA STOCK" },
+    { key: "stock_ok_today", label: "Stock OK Hari Ini", type: "strong", align: "right", sum: true },
     { key: "blc", label: "BLC", type: "signed", align: "right" },
     { key: "tt_assy", label: "T/T Assy (dtk/unit)", type: "number", align: "right", na: "N/A" },
     { key: "material_per_unit", label: "Material / Unit", type: "number", align: "right" },
     { key: "waktu_shortage", label: "Waktu Shortage", type: "hours", align: "right", na: "N/A" },
+    { key: "kondisi_produksi", label: "Kondisi Produksi", type: "status" },
     { key: "status", label: "Status", type: "status" },
   ];
   return (

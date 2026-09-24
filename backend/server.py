@@ -251,7 +251,7 @@ FIELDS = {
     "smt_stock": [("date", "Tanggal", False), ("lane", "Lane", False), ("product", "Product", False), ("type", "Type", False), ("ics_no", "ICS No.", False)] + [
         ("stock_ok_prev", "Stock OK SMT Kemarin", True), ("coating", "Coating", True),
         ("belum_cutting", "Belum Cutting", True), ("belum_ict", "Belum ICT", True),
-        ("belum_fct", "Belum FCT", True), ("ok", "OK", True), ("tray", "Tray", False)],
+        ("belum_fct", "Belum FCT", True), ("ok", "OK", True)],
     "production_needs": BASE_FIELDS + [
         ("plan_assy", "Plan Assy Hari Ini", True), ("stock_ok_prev", "Stock OK SMT Kemarin", True)],
     "variance": BASE_FIELDS + [
@@ -261,7 +261,7 @@ FIELDS = {
         ("reason", "Keterangan", False)],
     "items": [("lane", "Lane", False), ("product", "Product", False), ("type", "Type", False), ("ics_no", "ICS No.", False),
               ("tt", "T/T (detik)", True), ("tt_assy", "T/T Assy (detik/unit)", True), ("material_per_unit", "Kebutuhan Material per Unit Assy", True),
-              ("led_rank", "LED Rank", False), ("tray", "Tray", False)],
+              ("led_rank", "LED Rank", False)],
     "stock_standards": [("lane", "Lane", False), ("product", "Product", False), ("type", "Type", False), ("standard_stock", "Standart Stock", True)],
 }
 
@@ -695,11 +695,21 @@ def indikator(total, std):
 async def enrich_stock(docs: list) -> list:
     pm, sm = await product_map(), await standards_map()
     docs = await link_stock_prev(docs)
+    dates = sorted({d.get("date") for d in docs if d.get("date")})
+    prods = await db.smt_production.find({"date": {"$in": dates}}, {"date": 1, "ics_no": 1, "type": 1, "planing_smt": 1}).to_list(20000) if dates else []
+    plan = {}
+    for x in prods:
+        on = num(x.get("planing_smt")) > 0
+        plan[(x["date"], x.get("ics_no"), x.get("type"))] = plan.get((x["date"], x.get("ics_no"), x.get("type")), False) or on
+        plan[(x["date"], x.get("ics_no"), None)] = plan.get((x["date"], x.get("ics_no"), None), False) or on
     for d in docs:
         fill_product(d, pm)
         std = sm.get((d.get("lane"), d.get("product"), d.get("type")))
         d["standard_stock"] = std
         d["indikator"] = indikator(num(d.get("total")), std)
+        k = (d.get("date"), d.get("ics_no"), d.get("type"))
+        on = plan.get(k) if k in plan else plan.get((d.get("date"), d.get("ics_no"), None), False)
+        d["kondisi_produksi"] = "ON" if on else "OFF"
     return docs
 
 
@@ -719,23 +729,23 @@ async def needs_view(p: dict, product: Optional[str]) -> list:
             continue
         it = item_of(pm, r.get("ics_no"), r.get("type"))
         st = sm.get((r["date"], r.get("ics_no"), r.get("type"))) or sm_ics.get((r["date"], r.get("ics_no")))
-        stock = num(st.get("total")) if st else None
+        stock = num(st.get("total")) if st else 0.0
         planing, plan_assy = num(r.get("planing_smt")), num(r.get("plan_assy"))
         tt_assy = num(it.get("tt_assy")) or None
         mpu = num(it.get("material_per_unit"), 1.0) or 1.0
         active = planing > 0 or plan_assy > 0
-        if not active or stock is None or not tt_assy:
+        if not active or not tt_assy:
             ws = None
         else:
             ws = 0.0 if stock <= 0 else round(stock / mpu * tt_assy / 3600, 2)
-        blc = None if stock is None else r1(stock - plan_assy)
+        blc = r1(stock - plan_assy)
         out.append({
             "id": r["id"], "date": r["date"], "lane": r.get("lane"), "product": r.get("product"), "type": r.get("type"),
             "ics_no": r.get("ics_no"), "planing_smt": planing, "kondisi_produksi": "ON" if planing > 0 else "OFF",
-            "plan_assy": plan_assy, "stock_ok_today": stock, "stock_id": str(st["_id"]) if st else None,
+            "plan_assy": plan_assy, "stock_ok_today": stock, "stock_id": str(st["_id"]) if st else None, "has_stock": bool(st),
             "tt_assy": tt_assy, "material_per_unit": mpu, "waktu_shortage": ws, "blc": blc,
-            "fulfillment": (round(stock / plan_assy * 100, 1) if plan_assy else 100.0) if stock is not None else None,
-            "status": "BELUM DICEK" if stock is None else ("SHORTAGE" if blc < 0 else ("PAS" if blc == 0 else "CUKUP")),
+            "fulfillment": round(stock / plan_assy * 100, 1) if plan_assy else 100.0,
+            "status": "SHORTAGE" if blc < 0 else ("PAS" if blc == 0 else "CUKUP"),
         })
     return out
 
@@ -1163,7 +1173,7 @@ async def seed_from_excel():
                 base = {"lane": r["lane"], "type": r["type"], "ics_no": r["ics_no"]}
                 stock = normalize("smt_stock", {**base, "date": stock_date, "stock_ok_prev": r["stock_ok_prev"], "coating": r["coating"],
                                                 "belum_cutting": r["belum_cutting"], "belum_ict": r["belum_ict"],
-                                                "belum_fct": r["belum_fct"], "ok": r["ok"], "tray": r["tray"]})
+                                                "belum_fct": r["belum_fct"], "ok": r["ok"]})
                 needs = normalize("production_needs", {**base, "date": prod_date, "plan_assy": r["plan_assy"], "stock_ok_prev": r["stock_ok_prev"]})
                 smt_total = r["smt1"] + r["smt2"] + r["smt3"]
                 assy_total = r["assy1"] + r["assy2"] + r["assy3"]

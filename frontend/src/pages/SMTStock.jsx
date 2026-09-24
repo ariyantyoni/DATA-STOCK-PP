@@ -21,8 +21,8 @@ export default function SMTStock() {
     { key: "total", label: "Total Stock Hari Ini", type: "strong", align: "right", sum: true },
     { key: "standard_stock", label: "Standart Stock", type: "number", align: "right", na: "BELUM DISET" },
     { key: "indikator", label: "Indikator", type: "status" },
-    { key: "tray", label: "Tray" },
     { key: "status", label: "Status", type: "status" },
+    { key: "kondisi_produksi", label: "Kondisi Produksi", type: "status" },
   ];
   const formFields = [
     { key: "date", label: "Tanggal", type: "date", required: true, default: today() },
@@ -36,7 +36,6 @@ export default function SMTStock() {
     { key: "belum_ict", label: "Belum ICT", type: "number" },
     { key: "belum_fct", label: "Belum FCT", type: "number" },
     { key: "ok", label: "OK", type: "number" },
-    { key: "tray", label: "Tray", type: "text" },
   ];
   return (
     <CrudPage title="Stock SMT" subtitle="Total Stock Hari Ini = Coating + Belum Cutting + Belum ICT + Belum FCT + OK · Indikator = Total vs Standart Stock (PRODUCT + LANE) · Stock OK Kemarin tertaut ke H-1"
