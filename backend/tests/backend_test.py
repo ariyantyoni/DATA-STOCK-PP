@@ -6,7 +6,7 @@ import pytest
 import requests
 from openpyxl import Workbook
 
-BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") if os.environ.get("REACT_APP_BACKEND_URL") else "https://inventory-ops-pro-3.preview.emergentagent.com"
+BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") if os.environ.get("REACT_APP_BACKEND_URL") else "https://data-stock-branch.preview.emergentagent.com"
 # fallback via frontend/.env if env not present
 if "REACT_APP_BACKEND_URL" not in os.environ:
     try:

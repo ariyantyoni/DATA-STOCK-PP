@@ -4,7 +4,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://inventory-ops-pro-3.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://data-stock-branch.preview.emergentagent.com").rstrip("/")
 if not BASE_URL.startswith("http"):
     with open("/app/frontend/.env") as f:
         for line in f:

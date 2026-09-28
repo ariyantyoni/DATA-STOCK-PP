@@ -11,7 +11,7 @@
 
 ## API checks
 ```
-API=https://inventory-ops-pro-3.preview.emergentagent.com
+API=https://data-stock-branch.preview.emergentagent.com
 TOKEN=$(curl -s -X POST "$API/api/auth/login" -H "Content-Type: application/json" -d '{"email":"ariyantyoni@gmail.com","password":"admin123"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
 curl -s "$API/api/auth/me" -H "Authorization: Bearer $TOKEN"
 curl -s "$API/api/dashboard/summary" -H "Authorization: Bearer $TOKEN"
