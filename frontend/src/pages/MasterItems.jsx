@@ -22,7 +22,7 @@ export default function MasterItems() {
     { key: "ics_no", label: "ICS No.", type: "text", required: true },
     { key: "tt", label: "T/T (detik) — CAP/H = 3600 / T/T", type: "number" },
     { key: "tt_assy", label: "T/T Assy (detik/unit) — untuk Waktu Shortage", type: "number" },
-    { key: "material_per_unit", label: "Kebutuhan Material SMT per Unit Assy (default 1)", type: "number" },
+    { key: "material_per_unit", label: "Kebutuhan Material Part per Unit Assy (default 1)", type: "number" },
     { key: "led_rank", label: "LED Rank", type: "text" },
   ];
   return (

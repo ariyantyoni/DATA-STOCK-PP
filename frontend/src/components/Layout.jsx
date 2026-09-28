@@ -12,9 +12,9 @@ import NotificationBell from "@/components/NotificationBell";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/smt-production", label: "Produksi SMT & ASSY", icon: Cpu, module: "smt_production" },
-  { to: "/smt-stock", label: "Stock SMT", icon: Boxes, module: "smt_stock" },
-  { to: "/production-needs", label: "Kebutuhan Assy VS. Stock SMT", icon: ClipboardList, module: "production_needs" },
+  { to: "/smt-production", label: "Produksi Part & ASSY", icon: Cpu, module: "smt_production" },
+  { to: "/smt-stock", label: "Stock Part", icon: Boxes, module: "smt_stock" },
+  { to: "/production-needs", label: "Kebutuhan Assy VS. Stock Part", icon: ClipboardList, module: "production_needs" },
   { to: "/variance", label: "Variance Stock", icon: Scale, module: "variance" },
   { to: "/items", label: "Master Item", icon: Package, module: "items" },
   { to: "/stock-standards", label: "Standar Stock", icon: Gauge, module: "stock_standards" },
@@ -52,7 +52,7 @@ export default function Layout() {
           <Factory className="w-5 h-5 text-primary" />
         </div>
         <div className="leading-tight">
-          <p className="font-heading font-bold text-sm text-foreground">Control Data</p>
+          <p className="font-heading font-bold text-sm text-foreground">PART PRODUCTION</p>
           <p className="text-[10px] font-mono-data uppercase tracking-widest text-muted-foreground">Stock & Production</p>
         </div>
       </div>
@@ -110,7 +110,7 @@ export default function Layout() {
               {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
             <p className="text-xs font-mono-data uppercase tracking-widest text-muted-foreground hidden sm:block">
-              Automotive Manufacturing · SMT & LAMP ASSY
+              Automotive Manufacturing · PART PRODUCTION
             </p>
           </div>
           <div className="flex items-center gap-3">

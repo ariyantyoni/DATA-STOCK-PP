@@ -44,14 +44,14 @@ ROLE_LABELS = {
     "management": "Management",
     "production_planning": "Production Planning (PPIC)",
     "production_control": "Production Control (PC)",
-    "smt": "SMT",
+    "smt": "Part Production",
     "assembly": "Assembly (LAMP ASSY)",
 }
 
 MODULES = {
-    "smt_production": "Produksi SMT & ASSY",
-    "smt_stock": "Stock SMT",
-    "production_needs": "Kebutuhan Assy VS. Stock SMT",
+    "smt_production": "Produksi Part & ASSY",
+    "smt_stock": "Stock Part",
+    "production_needs": "Kebutuhan Assy VS. Stock Part",
     "variance": "Variance Stock",
     "items": "Master Item",
     "stock_standards": "Standar Stock",
@@ -244,19 +244,19 @@ BASE_FIELDS = [("date", "Tanggal", False), ("lane", "Lane", False), ("type", "Ty
 
 FIELDS = {
     "smt_production": [("date", "TANGGAL", False), ("lane", "LANE", False), ("product", "PRODUCT", False),
-        ("type", "TYPE", False), ("ics_no", "ICS NO", False), ("tt", "T/T", True), ("planing_smt", "PLANING SMT", True),
-        ("act_smt_s3", "ACT SMT S3", True), ("act_smt_s1", "ACT SMT S1", True), ("act_smt_s2", "ACT SMT S2", True),
+        ("type", "TYPE", False), ("ics_no", "ICS NO", False), ("tt", "T/T", True), ("planing_smt", "PLANING PART", True),
+        ("act_smt_s3", "ACT PART S3", True), ("act_smt_s1", "ACT PART S1", True), ("act_smt_s2", "ACT PART S2", True),
         ("plan_assy", "PLAN ASSY", True),
         ("act_assy_s3", "ACT ASSY S3", True), ("act_assy_s1", "ACT ASSY S1", True), ("act_assy_s2", "ACT ASSY S2", True)],
     "smt_stock": [("date", "Tanggal", False), ("lane", "Lane", False), ("product", "Product", False), ("type", "Type", False), ("ics_no", "ICS No.", False)] + [
-        ("stock_ok_prev", "Stock OK SMT Kemarin", True), ("coating", "Coating", True),
+        ("stock_ok_prev", "Stock OK Part Kemarin", True), ("coating", "Coating", True),
         ("belum_cutting", "Belum Cutting", True), ("belum_ict", "Belum ICT", True),
         ("belum_fct", "Belum FCT", True), ("ok", "OK", True)],
     "production_needs": BASE_FIELDS + [
-        ("plan_assy", "Plan Assy Hari Ini", True), ("stock_ok_prev", "Stock OK SMT Kemarin", True)],
+        ("plan_assy", "Plan Assy Hari Ini", True), ("stock_ok_prev", "Stock OK Part Kemarin", True)],
     "variance": BASE_FIELDS + [
-        ("total_stock_prev", "Total Stock Kemarin", True), ("smt_total", "Total Produksi SMT", True),
-        ("assy_total", "Total Produksi Assy", True), ("smt3", "SMT Shift 3", True),
+        ("total_stock_prev", "Total Stock Kemarin", True), ("smt_total", "Total Produksi Part", True),
+        ("assy_total", "Total Produksi Assy", True), ("smt3", "Part Shift 3", True),
         ("assy3", "Assy Shift 3", True), ("actual_total_stock", "Actual Total Stock", True),
         ("reason", "Keterangan", False)],
     "items": [("lane", "Lane", False), ("product", "Product", False), ("type", "Type", False), ("ics_no", "ICS No.", False),
@@ -1163,54 +1163,12 @@ async def seed_from_excel():
     if meta and meta.get("version") == SEED_VERSION:
         return
     now = datetime.now(timezone.utc).isoformat()
-    if not meta or meta.get("version", 0) < 2:
-        path = ROOT_DIR / "seed" / "data_stock.json"
-        if path.exists():
-            rows = json.loads(path.read_text())
-            prod_date, stock_date = "2026-09-12", "2026-09-13"
-            payload = {"smt_stock": [], "production_needs": [], "variance": []}
-            for r in rows:
-                base = {"lane": r["lane"], "type": r["type"], "ics_no": r["ics_no"]}
-                stock = normalize("smt_stock", {**base, "date": stock_date, "stock_ok_prev": r["stock_ok_prev"], "coating": r["coating"],
-                                                "belum_cutting": r["belum_cutting"], "belum_ict": r["belum_ict"],
-                                                "belum_fct": r["belum_fct"], "ok": r["ok"]})
-                needs = normalize("production_needs", {**base, "date": prod_date, "plan_assy": r["plan_assy"], "stock_ok_prev": r["stock_ok_prev"]})
-                smt_total = r["smt1"] + r["smt2"] + r["smt3"]
-                assy_total = r["assy1"] + r["assy2"] + r["assy3"]
-                var = normalize("variance", {**base, "date": stock_date, "total_stock_prev": r["total_stock_prev"],
-                                             "smt_total": smt_total, "assy_total": assy_total, "smt3": r["smt3"],
-                                             "assy3": r["assy3"], "actual_total_stock": stock["total"]})
-                for m, d in (("smt_stock", stock), ("production_needs", needs), ("variance", var)):
-                    d["created_at"] = now
-                    payload[m].append(d)
-            for m, docs in payload.items():
-                await db[m].delete_many({})
-                if docs:
-                    await db[m].insert_many(docs)
-                await db[m].create_index([("date", -1), ("ics_no", 1)])
-    # v3: gabung Produksi SMT & ASSY sesuai format CSV
-    csv_path = ROOT_DIR / "seed" / "smt_production.csv"
-    if csv_path.exists():
-        hm = header_map("smt_production")
-        docs = []
-        for rec in read_csv_rows(csv_path):
-            r = {hm.get(k.strip().lower()): v for k, v in rec.items() if hm.get(k.strip().lower()) not in (None, "__skip__")}
-            r["date"] = pd.to_datetime(r["date"]).strftime("%Y-%m-%d")
-            d = normalize("smt_production", r)
-            d["created_at"] = now
-            docs.append(d)
-        await db.smt_production.delete_many({})
-        if docs:
-            await db.smt_production.insert_many(docs)
-        await db.smt_production.create_index([("date", -1), ("ics_no", 1)])
-        for rec in read_csv_rows(csv_path):
-            await db.items.update_many({"ics_no": rec["ICS NO"].strip()},
-                                       {"$set": {"product": rec["PRODUCT"].strip(), "tt": num(rec["T/T"]),
-                                                 "cap_h": round(3600 / num(rec["T/T"])) if num(rec["T/T"]) else 0.0}})
-        await db.items.update_many({"product": {"$exists": False}}, {"$set": {"product": "REGULER"}})
+    # PART PRODUCTION: aplikasi baru dimulai dengan DATA TRANSAKSI KOSONG & independen
+    # dari aplikasi SMT. Tidak ada data smt_production / smt_stock / production_needs /
+    # variance yang di-seed. Hanya master item yang di-seed (lihat seed_items()).
     await db.lamp_production.drop()
     await db.meta.update_one({"_id": "seed"}, {"$set": {"version": SEED_VERSION, "at": now}}, upsert=True)
-    logger.info("Seed v%d applied", SEED_VERSION)
+    logger.info("Seed v%d applied (Part Production - transaksi kosong)", SEED_VERSION)
 
 
 async def seed_admin():
@@ -1232,7 +1190,7 @@ async def seed_demo_users():
     demos = [
         ("ppic@cds.co.id", "PPIC Andi", "production_planning"),
         ("pc@cds.co.id", "PC Budi", "production_control"),
-        ("smt@cds.co.id", "SMT Citra", "smt"),
+        ("smt@cds.co.id", "Part Citra", "smt"),
         ("assy@cds.co.id", "Assy Dewi", "assembly"),
         ("manager@cds.co.id", "Manager Eko", "management"),
     ]

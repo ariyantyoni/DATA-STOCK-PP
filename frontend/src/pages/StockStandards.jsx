@@ -17,7 +17,7 @@ export default function StockStandards() {
     { key: "standard_stock", label: "Standart Stock (pcs)", type: "number", required: true },
   ];
   return (
-    <CrudPage title="Standar Stock SMT" subtitle="Master nilai standar stock per kombinasi LANE + PRODUCT + TYPE — dipakai untuk INDIKATOR (PASS / MINUS / OVER) di modul Stock SMT"
+    <CrudPage title="Standar Stock Part" subtitle="Master nilai standar stock per kombinasi LANE + PRODUCT + TYPE — dipakai untuk INDIKATOR (PASS / MINUS / OVER) di modul Stock Part"
       icon={Gauge} endpoint="/stock-standards" dataset="stock-standards" module="stock_standards" itemPicker={false} hideAudit
       columns={columns} formFields={formFields}
       filters={["lane", "product", "type"]} options={options} refreshOptions={refresh} />

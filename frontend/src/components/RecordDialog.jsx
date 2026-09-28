@@ -75,7 +75,7 @@ export default function RecordDialog({ open, onOpenChange, title, fields, initia
         {hasPrev && !initial && prev && (
           <p data-testid="prev-values-hint" className={`text-xs font-mono-data flex items-center gap-1.5 ${prev.found ? "text-emerald-600" : "text-amber-600"}`}>
             <History className="w-3.5 h-3.5" />
-            {prev.found ? `Nilai kemarin diambil dari Stock SMT ${prev.source_date} (OK ${prev.stock_ok_prev}, Total ${prev.total_stock_prev}). Jika Anda mengubah manual, nilai tidak akan ditautkan lagi.` : "Tidak ada data Stock SMT sebelum tanggal ini — isi nilai kemarin manual"}
+            {prev.found ? `Nilai kemarin diambil dari Stock Part ${prev.source_date} (OK ${prev.stock_ok_prev}, Total ${prev.total_stock_prev}). Jika Anda mengubah manual, nilai tidak akan ditautkan lagi.` : "Tidak ada data Stock Part sebelum tanggal ini — isi nilai kemarin manual"}
           </p>
         )}
         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4 py-2">

@@ -33,7 +33,7 @@ export default function Login() {
       {/* Left: brand / image */}
       <div className="hidden lg:flex w-1/2 relative overflow-hidden border-r border-border">
         <img src="https://images.unsplash.com/photo-1581091212991-8891c7d4bd9b?crop=entropy&cs=srgb&fm=jpg&q=85&w=1400"
-          alt="SMT Manufacturing" className="absolute inset-0 w-full h-full object-cover opacity-60" />
+          alt="Part Manufacturing" className="absolute inset-0 w-full h-full object-cover opacity-60" />
         <div className="absolute inset-0 bg-slate-900/75" />
         <div className="relative z-10 flex flex-col justify-between p-12 text-white">
           <div className="flex items-center gap-3">
@@ -41,16 +41,16 @@ export default function Login() {
               <Factory className="w-6 h-6 text-primary" />
             </div>
             <div>
-              <p className="font-heading font-bold text-lg">Control Data</p>
+              <p className="font-heading font-bold text-lg">PART PRODUCTION</p>
               <p className="text-xs font-mono-data uppercase tracking-widest text-slate-300">Stock & Production</p>
             </div>
           </div>
           <div>
             <h1 className="font-heading text-4xl font-bold tracking-tight leading-tight">
-              Monitoring Produksi & Stock<br /><span className="text-primary">SMT & LAMP ASSY</span>
+              Monitoring Produksi & Stock<br /><span className="text-primary">PART PRODUCTION</span>
             </h1>
             <p className="text-slate-300 mt-4 max-w-md">
-              Platform terpusat untuk memantau hasil produksi harian, stok komponen SMT, kebutuhan produksi, dan variance — menggantikan laporan Excel manual dengan perhitungan otomatis.
+              Platform terpusat untuk memantau hasil produksi harian, stok part, kebutuhan produksi, dan variance — menggantikan laporan Excel manual dengan perhitungan otomatis.
             </p>
             <div className="flex items-center gap-2 mt-6 text-xs font-mono-data text-slate-300 uppercase tracking-widest">
               <Cpu className="w-4 h-4 text-primary" /> Automotive Manufacturing MES
@@ -66,7 +66,7 @@ export default function Login() {
             <div className="w-10 h-10 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center">
               <Factory className="w-5 h-5 text-primary" />
             </div>
-            <p className="font-heading font-bold text-lg">Control Data</p>
+            <p className="font-heading font-bold text-lg">PART PRODUCTION</p>
           </div>
           <h2 className="font-heading text-2xl font-bold">Masuk ke Sistem</h2>
           <p className="text-sm text-muted-foreground mt-1 mb-6">Gunakan akun yang telah diberikan admin.</p>

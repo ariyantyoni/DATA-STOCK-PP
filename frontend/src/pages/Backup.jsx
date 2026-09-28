@@ -68,7 +68,7 @@ export default function Backup() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="rounded-lg border border-border bg-card/60 p-6 space-y-4">
           <div className="flex items-center gap-2"><Download className="w-4 h-4 text-primary" /><h3 className="font-heading font-semibold">Backup (Export)</h3></div>
-          <p className="text-sm text-muted-foreground">File .zip berisi: Produksi SMT & ASSY, Stock SMT, Kebutuhan vs Stock, Variance, Master Item, Manajemen User, Audit Trail, dan Notifikasi (format JSON per modul). Dapat dibuka dengan WinRAR / 7-Zip.</p>
+          <p className="text-sm text-muted-foreground">File .zip berisi: Produksi Part & ASSY, Stock Part, Kebutuhan vs Stock, Variance, Master Item, Manajemen User, Audit Trail, dan Notifikasi (format JSON per modul). Dapat dibuka dengan WinRAR / 7-Zip.</p>
           <Button onClick={doExport} disabled={exporting} data-testid="backup-export-button">
             {exporting ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <FileArchive className="w-4 h-4 mr-1.5" />} Unduh Backup (.zip)
           </Button>

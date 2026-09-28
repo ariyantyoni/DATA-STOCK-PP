@@ -11,7 +11,7 @@ export default function Variance() {
     { key: "type", label: "Type" },
     { key: "ics_no", label: "ICS No.", mono: true },
     { key: "total_stock_prev", label: "Total Stock Kemarin", type: "number", align: "right", na: "N/A" },
-    { key: "smt_total", label: "Total Produksi SMT", type: "number", align: "right", sum: true },
+    { key: "smt_total", label: "Total Produksi Part", type: "number", align: "right", sum: true },
     { key: "assy_total", label: "Total Produksi Assy", type: "number", align: "right", sum: true },
     { key: "stock_sistem", label: "Stock System", type: "strong", align: "right", na: "N/A" },
     { key: "actual_total_stock", label: "Stock Actual", type: "strong", align: "right", sum: true },
@@ -21,9 +21,9 @@ export default function Variance() {
   ];
   return (
     <CrudPage title="Variance Stock"
-      subtitle="Stock System = Total Stock Kemarin + Total Produksi SMT − Total Produksi Assy · Variance = Stock Actual − Stock System · Total Produksi diambil otomatis dari Produksi SMT & ASSY (Total Act SMT / Total Act Assy)"
+      subtitle="Stock System = Total Stock Kemarin + Total Produksi Part − Total Produksi Assy · Variance = Stock Actual − Stock System · Total Produksi diambil otomatis dari Produksi Part & ASSY (Total Act Part / Total Act Assy)"
       icon={Scale} endpoint="/variance" dataset="variance" module="variance" readOnly hideAudit
-      columns={columns} formFields={[]} note="Stock Actual = Total Stock Hari Ini pada modul Stock SMT"
+      columns={columns} formFields={[]} note="Stock Actual = Total Stock Hari Ini pada modul Stock Part"
       filters={["date", "product", "lane", "type", "ics_no", "variance_status"]} options={options} refreshOptions={refresh} />
   );
 }

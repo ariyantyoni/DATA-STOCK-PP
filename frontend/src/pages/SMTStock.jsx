@@ -30,7 +30,7 @@ export default function SMTStock() {
     { key: "product", label: "Product", type: "select", options: options.products?.length ? options.products : ["REGULER", "SPO"] },
     { key: "type", label: "Type", type: "text", required: true },
     { key: "ics_no", label: "ICS No.", type: "text", required: true },
-    { key: "stock_ok_prev", label: "Stock OK SMT Kemarin (otomatis dari H-1, bisa diubah)", type: "number" },
+    { key: "stock_ok_prev", label: "Stock OK Part Kemarin (otomatis dari H-1, bisa diubah)", type: "number" },
     { key: "coating", label: "Coating", type: "number" },
     { key: "belum_cutting", label: "Belum Cutting", type: "number" },
     { key: "belum_ict", label: "Belum ICT", type: "number" },
@@ -38,7 +38,7 @@ export default function SMTStock() {
     { key: "ok", label: "OK", type: "number" },
   ];
   return (
-    <CrudPage title="Stock SMT" subtitle="Total Stock Hari Ini = Coating + Belum Cutting + Belum ICT + Belum FCT + OK · Indikator = Total vs Standart Stock (PRODUCT + LANE) · Stock OK Kemarin tertaut ke H-1"
+    <CrudPage title="Stock Part" subtitle="Total Stock Hari Ini = Coating + Belum Cutting + Belum ICT + Belum FCT + OK · Indikator = Total vs Standart Stock (PRODUCT + LANE) · Stock OK Kemarin tertaut ke H-1"
       icon={Boxes} endpoint="/smt-stock" dataset="smt-stock" module="smt_stock"
       columns={columns} formFields={formFields} note="Product diambil dari Master Item bila record belum memilikinya"
       filters={["date", "product", "lane", "type", "ics_no", "indikator"]} options={options} refreshOptions={refresh} />

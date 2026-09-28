@@ -87,7 +87,7 @@ export default function Dashboard() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight">Dashboard Kontrol Produksi</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Ringkasan produksi SMT & ASSY, stock SMT, kebutuhan (BLC), dan variance</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Ringkasan produksi Part & ASSY, stock Part, kebutuhan (BLC), dan variance</p>
         </div>
         <div className="flex items-end gap-2 flex-wrap">
           <div className="flex flex-col gap-1">
@@ -110,7 +110,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <KpiCard testId="kpi-smt" icon={Cpu} label="Total Produksi SMT" value={fmtNum(k.smt_total)}
+        <KpiCard testId="kpi-smt" icon={Cpu} label="Total Produksi Part" value={fmtNum(k.smt_total)}
           sub={`Planing ${fmtNum(k.smt_plan)} · Achv ${fmtPct(k.smt_achievement)}`}
           accent={k.smt_achievement >= 100 ? "text-emerald-600" : "text-cyan-600"} />
         <KpiCard testId="kpi-assy" icon={Lightbulb} label="Total Act Assy" value={fmtNum(k.assy_total)}
@@ -123,14 +123,14 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <KpiCard testId="kpi-stock-ok" icon={Boxes} label="Stock OK SMT" value={fmtNum(k.stock_ok)} sub={k.stock_date ? `per ${k.stock_date}` : ""} accent="text-emerald-600" />
-        <KpiCard testId="kpi-stock-total" icon={Layers} label="Total Stock SMT" value={fmtNum(k.stock_total)} sub={`${fmtNum(k.stock_items)} item`} accent="text-primary" />
+        <KpiCard testId="kpi-stock-ok" icon={Boxes} label="Stock OK Part" value={fmtNum(k.stock_ok)} sub={k.stock_date ? `per ${k.stock_date}` : ""} accent="text-emerald-600" />
+        <KpiCard testId="kpi-stock-total" icon={Layers} label="Total Stock Part" value={fmtNum(k.stock_total)} sub={`${fmtNum(k.stock_items)} item`} accent="text-primary" />
         <KpiCard testId="kpi-stock-wip" icon={Layers} label="Stock WIP (belum OK)" value={fmtNum(k.stock_total - k.stock_ok)} accent="text-amber-600" />
-        <KpiCard testId="kpi-plan" icon={Lightbulb} label="Item Produksi" value={fmtNum(k.smt_items)} sub="baris SMT & ASSY" accent="text-orange-600" />
+        <KpiCard testId="kpi-plan" icon={Lightbulb} label="Item Produksi" value={fmtNum(k.smt_items)} sub="baris Part & ASSY" accent="text-orange-600" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Panel icon={TrendingUp} title="Trend Produksi SMT & ASSY (Plan vs Actual)" className="lg:col-span-2">
+        <Panel icon={TrendingUp} title="Trend Produksi Part & ASSY (Plan vs Actual)" className="lg:col-span-2">
           <ResponsiveContainer width="100%" height={280}>
             <AreaChart data={data.smt_trend}>
               <defs>
@@ -144,15 +144,15 @@ export default function Dashboard() {
               <YAxis tick={axis} />
               <Tooltip content={<TooltipBox />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Area type="monotone" dataKey="actual" name="Total Act SMT" stroke="#0ea5e9" fill="url(#gActual)" strokeWidth={2} />
-              <Area type="monotone" dataKey="plan" name="Planing SMT" stroke="#0ea5e9" fill="none" strokeWidth={2} strokeDasharray="4 4" />
+              <Area type="monotone" dataKey="actual" name="Total Act Part" stroke="#0ea5e9" fill="url(#gActual)" strokeWidth={2} />
+              <Area type="monotone" dataKey="plan" name="Planing Part" stroke="#0ea5e9" fill="none" strokeWidth={2} strokeDasharray="4 4" />
               <Area type="monotone" dataKey="actual_assy" name="Total Act Assy" stroke="#f97316" fill="none" strokeWidth={2} />
               <Area type="monotone" dataKey="plan_assy" name="Plan Assy" stroke="#f59e0b" fill="none" strokeWidth={2} strokeDasharray="4 4" />
             </AreaChart>
           </ResponsiveContainer>
         </Panel>
 
-        <Panel icon={Boxes} title="Komposisi Stock SMT">
+        <Panel icon={Boxes} title="Komposisi Stock Part">
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
               <Pie data={data.stock_breakdown} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3}>
@@ -173,7 +173,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Panel icon={Cpu} title="Hasil SMT per Lane (per Shift)" tone="text-cyan-600" className="lg:col-span-2">
+        <Panel icon={Cpu} title="Hasil Part per Lane (per Shift)" tone="text-cyan-600" className="lg:col-span-2">
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={data.smt_by_lane}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--grid)" />
