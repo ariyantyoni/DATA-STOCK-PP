@@ -52,7 +52,7 @@ export default function Layout() {
           <Factory className="w-5 h-5 text-primary" />
         </div>
         <div className="leading-tight">
-          <p className="font-heading font-bold text-sm text-foreground">PART PRODUCTION</p>
+          <p className="font-heading font-bold text-sm text-foreground">PART PRODUCTION F1</p>
           <p className="text-[10px] font-mono-data uppercase tracking-widest text-muted-foreground">Stock & Production</p>
         </div>
       </div>
@@ -110,7 +110,7 @@ export default function Layout() {
               {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
             <p className="text-xs font-mono-data uppercase tracking-widest text-muted-foreground hidden sm:block">
-              Automotive Manufacturing · PART PRODUCTION
+              PART PRODUCTION F1
             </p>
           </div>
           <div className="flex items-center gap-3">
