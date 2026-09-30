@@ -893,6 +893,11 @@ def header_map(module: str) -> Dict[str, str]:
         m[label.lower()] = key
     m["part number"] = "ics_no"; m["part_number"] = "ics_no"; m["ics no."] = "ics_no"; m["ics no"] = "ics_no"
     m["tanggal"] = "date"; m["keterangan"] = "reason"; m["reason"] = "reason"
+    # Alias tambahan agar file lampiran & hasil export tetap terbaca (variasi penulisan label kolom)
+    m["t/t assy (dtk/unit)"] = "tt_assy"; m["t/t assy (detik/unit)"] = "tt_assy"; m["t/t assy"] = "tt_assy"
+    m["material / unit assy"] = "material_per_unit"; m["material/unit assy"] = "material_per_unit"
+    m["standart stock"] = "standard_stock"; m["standar stock"] = "standard_stock"
+    m["proses mesin"] = "proses_mesin"
     for skip in ("cap/h", "total smt", "achv %", "total plan", "balance", "total act smt", "total act assy"):
         m[skip] = "__skip__"
     return m
@@ -929,6 +934,21 @@ def map_rows(module: str, dff: pd.DataFrame):
     return rows, unknown
 
 
+def import_row_valid(dataset: str, r: dict) -> bool:
+    """Baris dianggap valid jika field kunci dataset lengkap.
+    - dataset dengan 'key' (mis. stock-standards: lane+product+type) → cek key tsb, TIDAK butuh ics_no.
+    - dataset lain → butuh ics_no, dan butuh date kecuali no_date.
+    """
+    ck = DATASETS[dataset].get("key")
+    if ck:
+        return all(str(r.get(k) or "").strip() for k in ck)
+    if not (str(r.get("ics_no") or "").strip()):
+        return False
+    if not DATASETS[dataset].get("no_date") and not r.get("date"):
+        return False
+    return True
+
+
 @api.get("/import/{dataset}/template")
 async def import_template(dataset: str, user: dict = Depends(get_current_user)):
     if dataset not in DATASETS:
@@ -956,7 +976,7 @@ async def import_preview(dataset: str, file: UploadFile = File(...), user: dict 
         rows, unknown = map_rows(module, dff)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Gagal membaca file: {e}")
-    invalid = sum(1 for r in rows if not r.get("ics_no") or (not DATASETS[dataset].get("no_date") and not r.get("date")))
+    invalid = sum(1 for r in rows if not import_row_valid(dataset, r))
     no_date = DATASETS[dataset].get("no_date")
     duplicates = 0
     for r in rows:
