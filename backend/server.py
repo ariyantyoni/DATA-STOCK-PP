@@ -797,7 +797,9 @@ async def variance_view(p: dict, product: Optional[str]) -> list:
 @api.get("/meta/options")
 async def meta_options(user: dict = Depends(get_current_user)):
     lanes, types, ics = set(), set(), set()
-    for m in ("smt_production", "smt_stock", "production_needs", "variance"):
+    # Sumber utama: Master Item (agar semua modul di dashboard terhubung ke master),
+    # digabung dengan nilai yang sudah ada di data transaksi.
+    for m in ("items", "smt_production", "smt_stock", "production_needs", "variance"):
         lanes |= {x for x in await db[m].distinct("lane") if x}
         types |= {x for x in await db[m].distinct("type") if x}
         ics |= {x for x in await db[m].distinct("ics_no") if x}
@@ -1205,25 +1207,42 @@ async def seed_demo_users():
 
 
 
+ITEMS_SEED_VERSION = 1
+
+
 async def seed_items():
-    if await db.items.count_documents({}) > 0:
+    # Master Item bersumber dari seed/items.csv (sesuai lampiran). Idempotent via marker
+    # 'items_seed' sehingga hanya reseed saat versi berubah — item tambahan user tidak terhapus di restart biasa.
+    marker = await db.meta.find_one({"_id": "items_seed"})
+    if marker and marker.get("version") == ITEMS_SEED_VERSION:
         return
-    path = ROOT_DIR / "seed" / "data_stock.json"
-    if not path.exists():
+    csv_path = ROOT_DIR / "seed" / "items.csv"
+    if not csv_path.exists():
         return
-    seen, docs = set(), []
+    hmap = {"lane": "lane", "product": "product", "type": "type", "ics no.": "ics_no",
+            "ics no": "ics_no", "t/t (detik)": "tt", "cap/h": "cap_h",
+            "t/t assy (dtk/unit)": "tt_assy", "proses mesin": "proses_mesin",
+            "material / unit assy": "material_per_unit"}
     now = datetime.now(timezone.utc).isoformat()
-    for r in json.loads(path.read_text()):
-        key = (r["ics_no"], r["type"])
-        if key in seen or not r["ics_no"].strip("0"):
+    docs = []
+    for rec in read_csv_rows(csv_path):
+        row = {}
+        for k, v in rec.items():
+            key = hmap.get((k or "").strip().lower())
+            if key:
+                row[key] = v
+        if not (row.get("ics_no") or "").strip():
             continue
-        seen.add(key)
-        d = normalize("items", r)
+        d = normalize("items", row)  # set field sesuai FIELDS["items"] + hitung cap_h
         d["created_at"] = now
         docs.append(d)
-    await db.items.insert_many(docs)
+    await db.items.delete_many({})
+    if docs:
+        await db.items.insert_many(docs)
     await db.items.create_index([("ics_no", 1), ("type", 1)])
-    logger.info("Seeded %d master items", len(docs))
+    await db.meta.update_one({"_id": "items_seed"},
+                             {"$set": {"version": ITEMS_SEED_VERSION, "at": now, "count": len(docs)}}, upsert=True)
+    logger.info("Seeded %d master items from items.csv", len(docs))
 
 
 @app.on_event("startup")

@@ -12,8 +12,8 @@ export default function MasterItems() {
     { key: "tt", label: "T/T (detik)", type: "number", align: "right" },
     { key: "cap_h", label: "CAP/H", type: "number", align: "right" },
     { key: "tt_assy", label: "T/T Assy (dtk/unit)", type: "number", align: "right", na: "N/A" },
-    { key: "material_per_unit", label: "Material / Unit Assy", type: "number", align: "right" },
     { key: "proses_mesin", label: "Proses Mesin" },
+    { key: "material_per_unit", label: "Material / Unit Assy", type: "number", align: "right" },
   ];
   const formFields = [
     { key: "lane", label: "Lane", type: "text", required: true },

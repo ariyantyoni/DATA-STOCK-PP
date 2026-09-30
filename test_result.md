@@ -174,6 +174,34 @@ backend:
         -working: true
         -agent: "testing"
         -comment: "✅ DATA MIGRATION RE-VERIFICATION COMPLETE - ALL TESTS PASSED. Main agent ran MongoDB migration to fix legacy data issue. VERIFICATION RESULTS: (1) ✅ Total item count: 119 (exact match). (2) ✅ Items with led_rank field: 0 (migration successfully removed ALL led_rank fields from all 119 items). (3) ✅ Items with proses_mesin field: 119 (ALL items now have proses_mesin field, empty string for legacy items is acceptable). (4) ✅ List endpoint GET /api/items returns 200 OK without errors. Sample verification: First 3 items checked - all have proses_mesin='', none have led_rank. MIGRATION CONFIRMED SUCCESSFUL: MongoDB operations ($unset led_rank, $set proses_mesin='') applied correctly to all 119 master items in part_production database. Test script: /app/backend_test_migration_verify.py."
+  - task: "Master Item di-seed 618 item dari items.csv (kolom Proses Mesin)"
+    implemented: true
+    working: true
+    file: "backend/server.py, backend/seed/items.csv"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Master Item kini di-seed 618 item dari backend/seed/items.csv dengan kolom: Lane, Product, Type, ICS No., T/T (detik), CAP/H (computed=3600/tt), T/T Assy (dtk/unit), Proses Mesin, Material/Unit Assy. Field led_rank sepenuhnya dihapus, field baru proses_mesin ditambahkan. Perlu testing: (1) GET /api/items return 618 items dengan field proses_mesin/tt_assy/material_per_unit/cap_h, tanpa led_rank. (2) meta/options bersumber dari master. (3) Cross-module linking via product_map. (4) CRUD regression. (5) Filters."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ ALL TESTS PASSED (5/5) - Master Item 618 records & cross-module linking verified. TEST RESULTS: (1) ✅ MASTER ITEM COUNT: Exactly 618 items returned by GET /api/items. (2) ✅ FIELD VERIFICATION: ALL 618 items have proses_mesin, tt_assy, material_per_unit, cap_h fields. ZERO items have led_rank field (fully removed). (3) ✅ PROSES MESIN VALUES: 5 distinct values found - INJECTION (359 items), VAKUM (172 items), BOTTOM COAT (31 items), PAINTING (30 items), HARD COAT (26 items). (4) ✅ CAP/H CALCULATION: Spot-checked 5 items, all calculations correct (cap_h = round(3600/tt, 2)). (5) ✅ META OPTIONS: lanes (81 total, includes 'PM 40'), types (170 total, includes '01D HL'), ics_nos (615 total), products (REGULER, SPO) all NON-EMPTY and sourced from master items. (6) ✅ CROSS-MODULE LINKING: Created smt_stock record WITHOUT product field, product auto-filled correctly from master via product_map. standard_stock/indikator computed. production_needs view resolves product from master correctly. (7) ✅ CRUD REGRESSION: Create/list/update/delete operations working. Item count restored to 618 after test. (8) ✅ FILTERS: All filters working correctly (product=REGULER returned 316 items, lane/type/ics_no filters all functional). Test script: /app/backend_test_master_item_618.py. All test data cleaned up."
+  - task: "Linking Master Item ke semua modul (meta/options + product_map)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "meta_options diupdate agar lanes/types/ics_nos JUGA bersumber dari Master Item (items collection) sehingga filter/picker tetap berfungsi walau data transaksi kosong. product_map digunakan untuk auto-fill product di smt_stock/production_needs/variance berdasarkan ics_no+type dari master. Perlu testing cross-module linking."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ VERIFIED - Cross-module linking working correctly. EVIDENCE: (1) Created smt_stock record with ics_no='5392375500' + type='K1ZG RC' from master item (product='SPO') WITHOUT sending product field. (2) GET /api/smt-stock returned the record with product='SPO' auto-filled from master via product_map. (3) standard_stock and indikator fields computed correctly (indikator='BELUM DISET' as expected for no standard). (4) Created smt_production record, production_needs view resolved product='SPO' from master correctly. (5) meta/options returns non-empty lanes/types/ics_nos sourced from master items even with empty transaction data. Test demonstrates complete integration: Master Item → product_map → auto-fill in stock/production modules → computed fields in needs/variance views. Test data cleaned up. Test script: /app/backend_test_master_item_618.py (Test 3)."
 
 frontend:
   - task: "Rebrand UI PART PRODUCTION (menu, judul, dashboard, login)"
@@ -191,7 +219,7 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 1
+  test_sequence: 2
   run_ui: false
 
 test_plan:
@@ -203,7 +231,18 @@ test_plan:
 agent_communication:
     -agent: "main"
     -message: |
-      Aplikasi diubah menjadi PART PRODUCTION (terpisah dari SMT). Backend sudah ditest & LULUS semua.
+      UPDATE MASTER ITEM: Master Item kini di-seed 618 item dari backend/seed/items.csv (kolom:
+      Lane, Product, Type, ICS No., T/T, CAP/H(computed), T/T Assy, Proses Mesin, Material/Unit).
+      Tolong test BACKEND:
+      1) GET /api/items mengembalikan 618 item; setiap item punya field proses_mesin (mayoritas terisi:
+         INJECTION/PAINTING/VAKUM/HARD COAT/BOTTOM COAT), tt_assy, material_per_unit, cap_h (=3600/tt), tidak ada led_rank.
+      2) GET /api/meta/options: lanes/types/ics_nos sekarang bersumber dari Master Item juga (tidak kosong
+         walau transaksi kosong). Pastikan berisi nilai dari master (mis. lane "PM 40", type "01D HL", ics dari master).
+      3) Linking antar modul: buat 1 record smt_stock via API dengan ics_no+type yang ADA di master tapi TANPA
+         mengisi 'product' → saat GET /api/datasets/smt-stock (atau list stock) product harus terisi otomatis dari
+         master (product_map). Begitu juga tt_assy/material/unit mengalir ke Kebutuhan (production_needs view).
+      4) Regresi CRUD items tetap jalan (create/update/delete) & filter items by product/lane/type/ics.
+      Bersihkan data uji yang dibuat. Base URL REACT_APP_BACKEND_URL + /api. Auth username admin/admin123.
     -agent: "testing"
     -message: |
       BACKEND ALL PASS. DB part_production terkonfirmasi terpisah: 119 master item, transaksi
@@ -390,3 +429,58 @@ agent_communication:
       
       Test script created: /app/backend_test_migration_verify.py
       No further action required on this task.
+    -agent: "testing"
+    -message: |
+      ✅ BACKEND TESTING COMPLETE - ALL TESTS PASSED (5/5)
+      
+      Comprehensive testing completed for Master Item update (618 items) and cross-module linking.
+      Test script: /app/backend_test_master_item_618.py
+      
+      TEST RESULTS SUMMARY:
+      ✅ Test 1: Master Item Count & Fields (618 items) - PASS
+         • Total items: 618 (exact match)
+         • Field verification: ALL items have proses_mesin, tt_assy, material_per_unit, cap_h
+         • NO items have led_rank field (fully removed)
+         • Distinct PROSES MESIN values: INJECTION (359), VAKUM (172), BOTTOM COAT (31), PAINTING (30), HARD COAT (26)
+         • CAP/H calculation verified correct: cap_h = round(3600/tt, 2)
+      
+      ✅ Test 2: Meta Options (sourced from Master Item) - PASS
+         • lanes: 81 total, includes master value 'PM 40'
+         • types: 170 total, includes master value '01D HL'
+         • ics_nos: 615 total, non-empty
+         • products: REGULER and SPO both present
+         • All meta options sourced from master items (works even with empty transaction data)
+      
+      ✅ Test 3: Cross-Module Linking (product_map) - PASS
+         • Created smt_stock record WITHOUT product field (ics_no=5392375500, type=K1ZG RC)
+         • Product auto-filled correctly from master: expected=SPO, actual=SPO
+         • standard_stock and indikator fields computed correctly
+         • production_needs view resolves product from master correctly
+         • Complete integration verified: Master Item → product_map → auto-fill → computed fields
+      
+      ✅ Test 4: Items CRUD Regression - PASS
+         • CREATE: New item with proses_mesin created successfully, cap_h calculated correctly
+         • LIST: Created item found in list
+         • UPDATE: proses_mesin updated successfully (TEST-MACHINE → UPDATED-MACHINE)
+         • DELETE: Item deleted successfully
+         • COUNT VERIFICATION: Item count restored to 618 after test
+      
+      ✅ Test 5: Items Filters - PASS
+         • Filter by product=REGULER: 316 items returned, all correct
+         • Filter by lane: Working correctly
+         • Filter by type: Working correctly
+         • Filter by ics_no: Working correctly
+      
+      DATA INTEGRITY:
+      • All 618 master items seeded from backend/seed/items.csv
+      • Columns: Lane, Product, Type, ICS No., T/T (detik), CAP/H (computed), T/T Assy (dtk/unit), Proses Mesin, Material/Unit Assy
+      • Field migration complete: led_rank removed, proses_mesin added
+      • Cross-module linking functional: product_map feeds smt_stock, production_needs, variance
+      • meta_options sourced from master items (lanes, types, ics_nos, products)
+      
+      TEST DATA CLEANUP:
+      • All test records created during testing have been deleted
+      • Database state clean and ready for production use
+      
+      🎉 ALL BACKEND TESTS PASSED - NO ISSUES FOUND
+      Master Item update (618 records) and cross-module linking fully functional.
