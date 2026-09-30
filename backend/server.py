@@ -261,7 +261,7 @@ FIELDS = {
         ("reason", "Keterangan", False)],
     "items": [("lane", "Lane", False), ("product", "Product", False), ("type", "Type", False), ("ics_no", "ICS No.", False),
               ("tt", "T/T (detik)", True), ("tt_assy", "T/T Assy (detik/unit)", True), ("material_per_unit", "Kebutuhan Material per Unit Assy", True),
-              ("led_rank", "LED Rank", False)],
+              ("proses_mesin", "PROSES MESIN", False)],
     "stock_standards": [("lane", "Lane", False), ("product", "Product", False), ("type", "Type", False), ("standard_stock", "Standart Stock", True)],
 }
 

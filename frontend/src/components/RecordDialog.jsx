@@ -10,7 +10,7 @@ import ItemPicker from "@/components/ItemPicker";
 import { History } from "lucide-react";
 
 const PREV_KEYS = ["stock_ok_prev", "total_stock_prev"];
-const ITEM_KEYS = ["lane", "product", "type", "ics_no", "tt", "led_rank"];
+const ITEM_KEYS = ["lane", "product", "type", "ics_no", "tt"];
 
 export default function RecordDialog({ open, onOpenChange, title, fields, initial, onSubmit, submitting, itemPicker }) {
   const [form, setForm] = useState({});

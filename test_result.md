@@ -157,6 +157,23 @@ backend:
         -working: true
         -agent: "testing"
         -comment: "✓ FULL REGRESSION PASSED: Auth (username-based login working for admin + all demo users). CRUD operations verified for smt_production, smt_stock, items, stock_standards (create/read/update/delete all working). Filters (date_from, date_to, lane, type, ics_no, product) all functional. Import/export: template download + preview + confirm working. Backup export + preview working. Users/roles management: list/create/update/delete all working. Production_needs & variance endpoints working (auto-derived, currently empty)."
+  - task: "Master Item: kolom LED Rank dihapus, PROSES MESIN ditambahkan"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Schema FIELDS['items'] diubah: field 'led_rank' dihapus, field 'proses_mesin' (label 'PROSES MESIN', text) ditambahkan. Endpoint /api/items (dataset 'items'). Perlu testing CRUD, import/export template, dan verifikasi 119 master items masih berfungsi."
+        -working: false
+        -agent: "testing"
+        -comment: "⚠️ PARTIAL PASS - Schema change implemented correctly for NEW data, but LEGACY DATA ISSUE found. TESTS PERFORMED: (1) ✅ CREATE: New item with proses_mesin='CNC-01' created successfully, led_rank correctly absent, cap_h computed correctly (300.0). (2) ✅ GET: Item retrieved with proses_mesin present, led_rank absent. (3) ✅ UPDATE: proses_mesin changed from 'CNC-01' to 'CNC-02' successfully. (4) ✅ IMPORT TEMPLATE: Column headers correct - 'PROSES MESIN' present, 'LED Rank' absent. All expected columns present. (5) ✅ IMPORT FUNCTIONALITY: Imported item with proses_mesin='LASER-01' successfully, led_rank correctly absent in imported data. (6) ✅ DELETE: Test items cleaned up successfully. (7) ✅ BASE ITEMS COUNT: 119 items confirmed. (8) ❌ LEGACY DATA: All 119 pre-existing items STILL CONTAIN 'led_rank' field in database. ISSUE: The normalize() function only filters fields when WRITING data (create/update/import), but GET endpoint returns raw database documents via clean() function which doesn't filter schema fields. IMPACT: API returns led_rank for old items, proses_mesin for new items. New items work correctly. Import/export uses new schema correctly. RECOMMENDATION: Need data migration to remove led_rank from existing 119 items OR modify GET endpoint to filter fields based on current schema."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ DATA MIGRATION RE-VERIFICATION COMPLETE - ALL TESTS PASSED. Main agent ran MongoDB migration to fix legacy data issue. VERIFICATION RESULTS: (1) ✅ Total item count: 119 (exact match). (2) ✅ Items with led_rank field: 0 (migration successfully removed ALL led_rank fields from all 119 items). (3) ✅ Items with proses_mesin field: 119 (ALL items now have proses_mesin field, empty string for legacy items is acceptable). (4) ✅ List endpoint GET /api/items returns 200 OK without errors. Sample verification: First 3 items checked - all have proses_mesin='', none have led_rank. MIGRATION CONFIRMED SUCCESSFUL: MongoDB operations ($unset led_rank, $set proses_mesin='') applied correctly to all 119 master items in part_production database. Test script: /app/backend_test_migration_verify.py."
 
 frontend:
   - task: "Rebrand UI PART PRODUCTION (menu, judul, dashboard, login)"
@@ -178,10 +195,7 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "Database terpisah part_production (DB_NAME) & transaksi kosong"
-    - "Regresi seluruh endpoint modul (CRUD, filter, import/export, backup/restore, users, roles, auth)"
-    - "Rebrand label backend (MODULES, ROLE_LABELS, FIELDS export/import)"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -272,3 +286,107 @@ agent_communication:
       The Part Production application reads/writes EXCLUSIVELY to the "part_production" database.
       ZERO cross-contamination with "test_database" or any other database detected.
       All CRUD operations (Create, Read, Update, Delete) are properly isolated to part_production only.
+    -agent: "testing"
+    -message: |
+      ✅ MASTER ITEM SCHEMA CHANGE TESTING COMPLETE - PARTIAL PASS (Legacy Data Issue)
+      
+      Tested the Master Item schema change (led_rank removed, proses_mesin added) as requested.
+      Created /app/backend_test_master_item.py and /app/backend_test_import.py for comprehensive testing.
+      
+      TEST RESULTS (6 tests performed):
+      ✅ Test 1: CREATE - New master item with proses_mesin field created successfully
+         • proses_mesin='CNC-01' present in response
+         • led_rank correctly absent in response
+         • cap_h computed correctly: 300.0 (3600/12)
+      
+      ✅ Test 2: GET Items List - Retrieved 120 items (119 base + 1 test)
+         • Test item found with proses_mesin='CNC-01'
+         • led_rank correctly absent in new item
+      
+      ✅ Test 3: UPDATE - proses_mesin updated successfully
+         • Changed from 'CNC-01' to 'CNC-02'
+         • Update persisted correctly
+      
+      ✅ Test 4: Import Template - Column headers verified
+         • 'PROSES MESIN' column present
+         • 'LED Rank' column correctly absent
+         • All expected columns present: Lane, Product, Type, ICS No., T/T (detik), T/T Assy (detik/unit), Kebutuhan Material per Unit Assy, PROSES MESIN
+      
+      ✅ Test 5: Import Functionality - Import with new schema working
+         • Imported item with proses_mesin='LASER-01' successfully
+         • Imported item does NOT have led_rank field
+         • Import preview and confirm both working correctly
+      
+      ✅ Test 6: DELETE & Count Verification
+         • Test items deleted successfully
+         • Final count: 119 items (correct)
+      
+      ❌ LEGACY DATA ISSUE FOUND:
+      • All 119 pre-existing seeded items STILL CONTAIN 'led_rank' field in database
+      • API GET endpoint returns raw database documents including led_rank for old items
+      • Root cause: normalize() function only filters fields when WRITING (create/update/import), not when READING
+      • The clean() function used in GET endpoint doesn't filter based on current schema
+      
+      IMPACT ASSESSMENT:
+      • NEW items: Work correctly (proses_mesin present, led_rank absent)
+      • IMPORTED items: Work correctly (use new schema)
+      • EXISTING 119 items: Still have led_rank in API responses
+      • Import/Export templates: Use new schema correctly
+      • No functional errors, but schema inconsistency exists
+      
+      RECOMMENDATION FOR MAIN AGENT:
+      Choose ONE of these approaches:
+      1. DATA MIGRATION: Run MongoDB update to remove led_rank field from all existing items:
+         db.items.update_many({}, {$unset: {led_rank: ""}})
+      2. API FILTERING: Modify the list_items function in register_crud to filter returned fields based on FIELDS[module]
+      
+      The requirement states "Confirm the 119 pre-existing seeded master items still list without error (they may not have proses_mesin populated — that is acceptable/empty)."
+      Items DO list without error, but they contain the old led_rank field which should have been removed.
+    -agent: "testing"
+    -message: |
+      ✅ DATA MIGRATION RE-VERIFICATION COMPLETE - ALL TESTS PASSED
+      
+      Re-verified the Master Item data migration fix as requested. Main agent successfully ran MongoDB migration operations to fix the legacy data issue.
+      
+      VERIFICATION RESULTS:
+      ✅ Test 1: Total Item Count - PASS
+         • Expected: 119 items
+         • Actual: 119 items
+         • Status: Exact match ✓
+      
+      ✅ Test 2: Items with 'led_rank' field - PASS
+         • Expected: 0 items (field should be removed)
+         • Actual: 0 items
+         • Status: NO items contain led_rank field ✓
+         • Migration successfully removed ALL led_rank fields from all 119 items
+      
+      ✅ Test 3: Items with 'proses_mesin' field - PASS
+         • Expected: 119 items (all items should have this field)
+         • Actual: 119 items
+         • Status: ALL items contain proses_mesin field ✓
+         • Empty string values for legacy items are acceptable and correct
+      
+      ✅ Test 4: List Endpoint - PASS
+         • GET /api/items returns 200 OK
+         • No errors encountered
+         • Endpoint functioning correctly ✓
+      
+      SAMPLE VERIFICATION:
+      • Checked first 3 items in the list
+      • All have proses_mesin field (value: empty string '')
+      • None have led_rank field
+      • Data structure consistent across all items
+      
+      MIGRATION OPERATIONS CONFIRMED:
+      • MongoDB $unset operation: Successfully removed led_rank from all 119 items
+      • MongoDB $set operation: Successfully added proses_mesin='' to all items where missing
+      • Database: part_production.items collection
+      
+      🎯 FINAL VERDICT: PASS ✅
+      The data migration was successful. All 119 master items in the part_production database now:
+      - Have the proses_mesin field (empty string for legacy items)
+      - Do NOT have the led_rank field (completely removed)
+      - List without errors via GET /api/items endpoint
+      
+      Test script created: /app/backend_test_migration_verify.py
+      No further action required on this task.
