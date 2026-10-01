@@ -1227,7 +1227,7 @@ async def seed_demo_users():
 
 
 
-ITEMS_SEED_VERSION = 1
+ITEMS_SEED_VERSION = 2
 
 
 async def seed_items():
