@@ -10,21 +10,23 @@ export default function ProductionNeeds() {
     { key: "product", label: "Product", na: "BELUM DIMAPPING" },
     { key: "type", label: "Type" },
     { key: "ics_no", label: "ICS No.", mono: true },
-    { key: "planing_smt", label: "Planing Part", type: "number", align: "right", sum: true },
+    { key: "proses_mesin", label: "Proses Mesin", na: "-" },
     { key: "plan_assy", label: "Plan Assy", type: "number", align: "right", sum: true },
-    { key: "stock_ok_today", label: "Stock OK Hari Ini", type: "strong", align: "right", sum: true },
+    { key: "stock_ok_today", label: "Stock Part Hari Ini", type: "strong", align: "right", sum: true },
     { key: "blc", label: "BLC", type: "signed", align: "right" },
     { key: "tt_assy", label: "T/T Assy (dtk/unit)", type: "number", align: "right", na: "N/A" },
     { key: "material_per_unit", label: "Material / Unit", type: "number", align: "right" },
     { key: "status", label: "Status", type: "status" },
     { key: "waktu_shortage", label: "Waktu Shortage", type: "hours", align: "right", na: "N/A" },
-    { key: "kondisi_produksi", label: "Kondisi Produksi", type: "status" },
+    { key: "shift3", label: "Kondisi SHIFT 3", type: "status" },
+    { key: "shift1", label: "Kondisi SHIFT 1", type: "status" },
+    { key: "shift2", label: "Kondisi SHIFT 2", type: "status" },
   ];
   return (
     <CrudPage title="Kebutuhan Assy VS. Stock Part"
-      subtitle="Otomatis dari Produksi Part & ASSY (planning) + Stock Part (Total Stock Hari Ini) + Master Item (T/T Assy) · Waktu Shortage (jam) = Stock ÷ Material/Unit × T/T Assy ÷ 3600"
+      subtitle="Kondisi Produksi per SHIFT otomatis dari Produksi Part & ASSY (SHIFT 3 = ada PLAN apa pun; SHIFT 1 & 2 = ada PLAN INJECTION) · dicocokkan per Tanggal + ICS No. + Type · Waktu Shortage (jam) = Stock ÷ Material/Unit × T/T Assy ÷ 3600"
       icon={ClipboardList} endpoint="/production-needs" dataset="production-needs" module="production_needs" readOnly hideAudit
-      columns={columns} formFields={[]} note="Kondisi Produksi ON = ada Planing Part pada tanggal, lane, product & ICS terkait"
-      filters={["date", "product", "lane", "type", "ics_no", "needs_status"]} options={options} refreshOptions={refresh} />
+      columns={columns} formFields={[]} note="Indikator KONDISI PRODUKSI membaca keberadaan PLAN produksi per shift pada module Produksi Part & ASSY secara real-time"
+      filters={["date", "shift", "proses_mesin", "product", "lane", "type", "ics_no", "needs_status"]} options={options} refreshOptions={refresh} />
   );
 }

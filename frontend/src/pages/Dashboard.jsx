@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const STOCK_COLORS = ["#10b981", "#f59e0b", "#38bdf8", "#a78bfa", "#f97316"];
+const STOCK_COLORS = ["#10b981", "#f59e0b", "#38bdf8", "#a78bfa", "#f97316", "#06b6d4", "#ef4444"];
 
 function TooltipBox({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -123,9 +123,9 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <KpiCard testId="kpi-stock-ok" icon={Boxes} label="Stock OK Part" value={fmtNum(k.stock_ok)} sub={k.stock_date ? `per ${k.stock_date}` : ""} accent="text-emerald-600" />
-        <KpiCard testId="kpi-stock-total" icon={Layers} label="Total Stock Part" value={fmtNum(k.stock_total)} sub={`${fmtNum(k.stock_items)} item`} accent="text-primary" />
-        <KpiCard testId="kpi-stock-wip" icon={Layers} label="Stock WIP (belum OK)" value={fmtNum(k.stock_total - k.stock_ok)} accent="text-amber-600" />
+        <KpiCard testId="kpi-stock-ok" icon={Boxes} label="Total Stock Part" value={fmtNum(k.stock_total)} sub={k.stock_date ? `per ${k.stock_date}` : ""} accent="text-emerald-600" />
+        <KpiCard testId="kpi-stock-total" icon={Layers} label="Jumlah Item Stock" value={fmtNum(k.stock_items)} sub="baris data stock" accent="text-primary" />
+        <KpiCard testId="kpi-stock-wip" icon={Layers} label="Plan Produksi Part" value={fmtNum(k.smt_plan)} sub="Injection + EVA" accent="text-amber-600" />
         <KpiCard testId="kpi-plan" icon={Lightbulb} label="Item Produksi" value={fmtNum(k.smt_items)} sub="baris Part & ASSY" accent="text-orange-600" />
       </div>
 
@@ -173,7 +173,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Panel icon={Cpu} title="Hasil Part per Lane (per Shift)" tone="text-cyan-600" className="lg:col-span-2">
+        <Panel icon={Cpu} title="Hasil Part per Lane (Injection / EVA / Assy)" tone="text-cyan-600" className="lg:col-span-2">
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={data.smt_by_lane}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--grid)" />
@@ -181,9 +181,9 @@ export default function Dashboard() {
               <YAxis tick={axis} />
               <Tooltip content={<TooltipBox />} cursor={{ fill: "var(--grid)" }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="act_smt_s3" name="Shift 3" stackId="a" fill="#0369a1" />
-              <Bar dataKey="act_smt_s1" name="Shift 1" stackId="a" fill="#38bdf8" />
-              <Bar dataKey="act_smt_s2" name="Shift 2" stackId="a" fill="#0ea5e9" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="injection" name="Injection" stackId="a" fill="#0369a1" />
+              <Bar dataKey="eva" name="EVA" stackId="a" fill="#38bdf8" />
+              <Bar dataKey="assy" name="Assy" stackId="a" fill="#f97316" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </Panel>

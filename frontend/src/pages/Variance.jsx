@@ -10,6 +10,7 @@ export default function Variance() {
     { key: "product", label: "Product", na: "BELUM DIMAPPING" },
     { key: "type", label: "Type" },
     { key: "ics_no", label: "ICS No.", mono: true },
+    { key: "proses_mesin", label: "Proses Mesin", na: "-" },
     { key: "total_stock_prev", label: "Total Stock Kemarin", type: "number", align: "right", na: "N/A" },
     { key: "smt_total", label: "Total Produksi Part", type: "number", align: "right", sum: true },
     { key: "assy_total", label: "Total Produksi Assy", type: "number", align: "right", sum: true },
@@ -24,6 +25,6 @@ export default function Variance() {
       subtitle="Stock System = Total Stock Kemarin + Total Produksi Part − Total Produksi Assy · Variance = Stock Actual − Stock System · Total Produksi diambil otomatis dari Produksi Part & ASSY (Total Act Part / Total Act Assy)"
       icon={Scale} endpoint="/variance" dataset="variance" module="variance" readOnly hideAudit
       columns={columns} formFields={[]} note="Stock Actual = Total Stock Hari Ini pada modul Stock Part"
-      filters={["date", "product", "lane", "type", "ics_no", "variance_status"]} options={options} refreshOptions={refresh} />
+      filters={["date", "proses_mesin", "product", "lane", "type", "ics_no", "variance_status"]} options={options} refreshOptions={refresh} />
   );
 }

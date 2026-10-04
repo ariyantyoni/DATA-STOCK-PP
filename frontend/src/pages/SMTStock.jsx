@@ -3,44 +3,49 @@ import { useMetaOptions } from "@/hooks/useMetaOptions";
 import { Boxes } from "lucide-react";
 
 const today = () => new Date().toISOString().slice(0, 10);
+const SHIFTS = ["SHIFT 3", "SHIFT 1", "SHIFT 2"];
 
 export default function SMTStock() {
   const { options, refresh } = useMetaOptions();
   const columns = [
     { key: "date", label: "Tanggal", mono: true },
+    { key: "shift", label: "Shift", mono: true },
     { key: "lane", label: "Lane", mono: true },
     { key: "product", label: "Product", na: "BELUM DIMAPPING" },
     { key: "type", label: "Type" },
     { key: "ics_no", label: "ICS No.", mono: true },
-    { key: "stock_ok_prev", label: "Stock OK Kemarin (H-1)", type: "number", align: "right", sum: true },
-    { key: "coating", label: "Coating", type: "number", align: "right", sum: true },
-    { key: "belum_cutting", label: "Belum Cutting", type: "number", align: "right", sum: true },
-    { key: "belum_ict", label: "Belum ICT", type: "number", align: "right", sum: true },
-    { key: "belum_fct", label: "Belum FCT", type: "number", align: "right", sum: true },
-    { key: "ok", label: "OK", type: "strong", align: "right", sum: true },
+    { key: "proses_mesin", label: "Proses Mesin", na: "-" },
+    { key: "group1", label: "Group 1", type: "number", align: "right", sum: true },
+    { key: "group2", label: "Group 2", type: "number", align: "right", sum: true },
+    { key: "group3", label: "Group 3", type: "number", align: "right", sum: true },
+    { key: "group4", label: "Group 4", type: "number", align: "right", sum: true },
+    { key: "group5", label: "Group 5", type: "number", align: "right", sum: true },
+    { key: "group6", label: "Group 6", type: "number", align: "right", sum: true },
+    { key: "part_ragu", label: "Part Ragu-ragu", type: "number", align: "right", sum: true },
     { key: "total", label: "Total Stock Hari Ini", type: "strong", align: "right", sum: true },
     { key: "standard_stock", label: "Standart Stock", type: "number", align: "right", na: "BELUM DISET" },
     { key: "indikator", label: "Indikator", type: "status" },
     { key: "status", label: "Status", type: "status" },
-    { key: "kondisi_produksi", label: "Kondisi Produksi", type: "status" },
   ];
   const formFields = [
     { key: "date", label: "Tanggal", type: "date", required: true, default: today() },
+    { key: "shift", label: "Shift", type: "select", options: SHIFTS, required: true },
     { key: "lane", label: "Lane", type: "text", required: true },
     { key: "product", label: "Product", type: "select", options: options.products?.length ? options.products : ["REGULER", "SPO"] },
     { key: "type", label: "Type", type: "text", required: true },
     { key: "ics_no", label: "ICS No.", type: "text", required: true },
-    { key: "stock_ok_prev", label: "Stock OK Part Kemarin (otomatis dari H-1, bisa diubah)", type: "number" },
-    { key: "coating", label: "Coating", type: "number" },
-    { key: "belum_cutting", label: "Belum Cutting", type: "number" },
-    { key: "belum_ict", label: "Belum ICT", type: "number" },
-    { key: "belum_fct", label: "Belum FCT", type: "number" },
-    { key: "ok", label: "OK", type: "number" },
+    { key: "group1", label: "Group 1", type: "number" },
+    { key: "group2", label: "Group 2", type: "number" },
+    { key: "group3", label: "Group 3", type: "number" },
+    { key: "group4", label: "Group 4", type: "number" },
+    { key: "group5", label: "Group 5", type: "number" },
+    { key: "group6", label: "Group 6", type: "number" },
+    { key: "part_ragu", label: "Part Ragu-ragu", type: "number" },
   ];
   return (
-    <CrudPage title="Stock Part" subtitle="Total Stock Hari Ini = Coating + Belum Cutting + Belum ICT + Belum FCT + OK · Indikator = Total vs Standart Stock (PRODUCT + LANE) · Stock OK Kemarin tertaut ke H-1"
+    <CrudPage title="Stock Part" subtitle="Total Stock Hari Ini = GROUP 1 + … + GROUP 6 + PART RAGU-RAGU · Indikator = Total vs Standart Stock (PRODUCT + LANE) · Product & Proses Mesin otomatis dari Master Item"
       icon={Boxes} endpoint="/smt-stock" dataset="smt-stock" module="smt_stock"
-      columns={columns} formFields={formFields} note="Product diambil dari Master Item bila record belum memilikinya"
-      filters={["date", "product", "lane", "type", "ics_no", "indikator"]} options={options} refreshOptions={refresh} />
+      columns={columns} formFields={formFields} note="Pilih item dari Master Item untuk mengisi Lane/Product/Type/ICS otomatis"
+      filters={["date", "shift", "proses_mesin", "product", "lane", "type", "ics_no", "indikator"]} options={options} refreshOptions={refresh} />
   );
 }

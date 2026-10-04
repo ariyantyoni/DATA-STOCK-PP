@@ -216,6 +216,23 @@ backend:
         -working: true
         -agent: "testing"
         -comment: "✅ ALL 5 TESTS PASSED - Import bugfix verified completely. TEST RESULTS: (1) ✅ STOCK-STANDARDS: Preview invalid=0, new=2 (NOT 0 as before fix). First confirm inserted=2. Second confirm (duplicate) updated=2, inserted=0 (correct duplicate handling). Records verified and cleaned. (2) ✅ ITEMS ATTACHMENT HEADER: Preview unknown_columns=[], tt_assy=10.0 (NOT 0), proses_mesin='INJECTION', cap_h=180.0. All fields correctly mapped from 'T/T Assy (dtk/unit)' and 'PROSES MESIN'. Confirm inserted=1. Verified via GET, item count restored to 618. (3) ✅ ROUNDTRIP FRONTEND EXPORT: Preview unknown_columns=[] (CAP/H correctly skipped). tt_assy=15.0, material_per_unit=2.0 correctly mapped from 'Material / Unit Assy'. Confirm inserted=1. (4) ✅ XLSX IMPORT: XLSX file parsed correctly using openpyxl. Preview new=1, confirm inserted=1, proses_mesin='PAINTING' verified. (5) ✅ REGRESSION SMT-STOCK: Preview invalid=0, new=1. Confirm inserted=1. Transaction import still working correctly. FINAL STATE: Item count=618 (correct), all ZZZ test data cleaned up. Test script: /app/backend_test_import_bugfix.py. BUGFIX WORKING PERFECTLY: (a) stock-standards preview no longer counts rows as invalid (was requiring ics_no, now correctly checks lane+product+type). (b) Header aliases working: 'T/T Assy (dtk/unit)', 'Material / Unit Assy', 'Standart Stock', 'PROSES MESIN' all mapped correctly."
+  - task: "REVISI 4-MODUL: Stock Part (GROUP1-6 + Part Ragu + SHIFT), Produksi (PLAN/ACT INJECTION/EVA/ASSY + SHIFT), Kebutuhan (Kondisi Produksi per SHIFT), Variance (formula update)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "REVISI BESAR 4 MODUL. (1) smt_stock: field baru shift + group1..6 + part_ragu, total computed, old fields removed. (2) smt_production: shift + plan/act injection/eva/assy, computed fields. (3) production_needs: shift indicators (shift3/shift1/shift2 ON/OFF based on production records). (4) variance: smt_total = sum total_act_part, assy_total = sum act_assy. (5) dashboard: stock_breakdown Group1-6 + Part Ragu-ragu, smt_by_lane injection/eva/assy. (6) meta/options: shifts + proses_mesin from master. (7) Regression: 618 items, standar stock, users, backup."
+        -working: false
+        -agent: "testing"
+        -comment: "❌ CRITICAL BUG FOUND + ✅ 6/7 TESTS PASSED. Test script: /app/backend_test_comprehensive.py. CRITICAL BUG: Backend enforces unique key (date, ics_no, type) for smt_production, preventing multiple records with same date+ics+type but different shifts. The needs_view function (lines 727-791) expects multiple production records per date+ics+type with different shifts to aggregate shift indicators, but the CRUD layer (line 592) enforces unique constraint without shift. IMPACT: Cannot create multiple production records for different shifts on same day for same item, breaking the intended cross-module sync design. WORKAROUND USED: Created records with different dates to test shift indicator logic. TEST RESULTS: ✅ (1) STOCK PART: Schema correct (shift + group1-6 + part_ragu), total computed correctly (215.0, 250.0, 107.0), status=OK, proses_mesin/product auto-filled from master, shift filter working (SHIFT 3/1/2), proses_mesin filter working. ✅ (2) PRODUKSI: Schema correct, computed fields verified (total_act=145, total_plan=180, total_act_part=120, total_act_assy=25, plan_part=150, achv=80.6%, balance=95), shift filter working, proses_mesin filter working. ✅ (3) KEBUTUHAN: Cross-module sync working with workaround. shift3=ON when plan_eva>0, shift3=OFF when all plans=0, kondisi_produksi updates correctly, proses_mesin field present, filter working. Live sync verified: updating production plans immediately reflects in production-needs. ✅ (4) VARIANCE: Formula correct (total_stock_prev=100, smt_total=120, assy_total=20, stock_sistem=200, actual=150, variance=-50), proses_mesin field present, filter working. ✅ (5) DASHBOARD: Returns without error, KPI structure correct (smt_total uses total_act_part), stock_breakdown has Group 1-6 + Part Ragu-ragu (7 items), smt_by_lane has injection/eva/assy keys. ✅ (6) META: shifts=['SHIFT 3','SHIFT 1','SHIFT 2'], proses_mesin=['BOTTOM COAT','HARD COAT','INJECTION','PAINTING','VAKUM'] sourced from Master Item (not hardcoded). ✅ (7) REGRESSION: Master Item 618 items, Standar Stock endpoint working, Users 6 users, Backup export 20121 bytes. All test data cleaned up (3 production + 5 stock records deleted). RECOMMENDATION: Remove or modify unique key constraint for smt_production to allow multiple records per date+ics+type with different shifts, OR change needs_view logic to work with single record per day."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ ALL 23 TESTS PASSED - UNIQUE KEY BUG FIXED + CROSS-MODULE SYNC VERIFIED. Test script: /app/backend_test_cross_module_sync.py. BUGFIX CONFIRMED: Main agent successfully modified unique key constraint to include shift (lines 593-594 in server.py). Unique key now: (date, ics_no, type, shift) for both smt_production and smt_stock. PRIMARY TESTS (CROSS-MODULE SYNC): ✅ (1) Create TWO production records with SAME date+ics+type, DIFFERENT shifts: Record A (SHIFT 3, plan_eva=50) HTTP 200, Record B (SHIFT 1, plan_injection=60) HTTP 200 (NOT 409). Both records persist, count=2. ✅ (2) Production-needs shift indicators: shift3=ON (plan_eva>0), shift1=ON (plan_injection>0), shift2=OFF, kondisi_produksi=ON. ✅ (3) LIVE SYNC: Update Record A plan_eva=0 → shift3 flips to OFF. Update Record B plan_injection=0 → shift1 flips to OFF, kondisi_produksi flips to OFF. ✅ (4) Create SHIFT 2 record (plan_injection=5) → shift2 becomes ON. SECONDARY TESTS (REGRESSION): ✅ (5) SMT-STOCK: Create two records with different shifts, same date+ics+type, both succeed (HTTP 200). Total computed correctly (215.0). Shift filter working (SHIFT 3/1/2). Proses_mesin filter working. ✅ (6) SMT-PRODUCTION: Computed fields correct (total_act, total_plan, total_act_part, total_act_assy, plan_part, achv, balance). Shift filter working. ✅ (7) VARIANCE: Endpoint working (HTTP 200). ✅ (8) DASHBOARD: Endpoint working (HTTP 200). ✅ (9) META OPTIONS: shifts and proses_mesin present. ✅ (10) MASTER ITEM: Count=618 (unchanged). CLEANUP: All 3 production + 2 stock test records deleted. Item count verified 618 after cleanup. EVIDENCE: HTTP 200 for both creates (NOT 409), shift indicators ON/OFF transitions working correctly, live sync immediate reflection confirmed. CROSS-MODULE SYNC FULLY FUNCTIONAL."
 
 frontend:
   - task: "Rebrand UI PART PRODUCTION (menu, judul, dashboard, login)"
@@ -233,11 +250,12 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 2
+  test_sequence: 3
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "All backend tasks completed and verified"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -245,29 +263,25 @@ test_plan:
 agent_communication:
     -agent: "main"
     -message: |
-      BUGFIX IMPORT (test BACKEND). User melaporkan import .csv/.xlsx pada modul Master Item (items)
-      & Standar Stock (stock-standards) tidak bisa masuk ke dashboard.
-      ROOT CAUSE ditemukan & diperbaiki:
-      (a) /import/{dataset}/preview menghitung 'invalid' berbasis ics_no → untuk stock-standards
-          (key: lane+product+type, TANPA ics_no) SEMUA baris tertandai invalid, new=0, sehingga user
-          mengira gagal. Ditambah helper import_row_valid() yang cek field kunci sesuai dataset.
-      (b) header_map ditambah alias: "t/t assy (dtk/unit)"/"t/t assy (detik/unit)"→tt_assy,
-          "material / unit assy"→material_per_unit, "standart stock"→standard_stock, "proses mesin"→proses_mesin.
-      TOLONG VERIFIKASI (dataset name: items dan stock-standards; endpoint /api/import/{dataset}/preview & /confirm, multipart file):
-      1) stock-standards: preview file CSV (kolom Lane,Product,Type,Standart Stock) → invalid=0, new sesuai jumlah baris (bukan 0).
-         confirm → inserted bertambah; ulangi confirm file sama → updated (duplikat), bukan insert ganda.
-      2) items: preview & confirm CSV memakai header lampiran "T/T Assy (dtk/unit)" → tt_assy TERISI (bukan 0), unknown_columns kosong.
-      3) Roundtrip: buat file dengan header = LABEL kolom export frontend
-         (items: Lane,Product,Type,ICS No.,T/T (detik),CAP/H,T/T Assy (dtk/unit),Proses Mesin,Material / Unit Assy ;
-          stock-standards: Lane,Product,Type,Standart Stock) → import berhasil, kolom termapping (CAP/H diabaikan wajar).
-      4) Uji juga file .xlsx (bukan hanya .csv) untuk kedua dataset.
-      5) Regresi: import dataset transaksi (mis. smt-stock dengan Tanggal+ICS No.) tetap berfungsi normal.
-      BERSIHKAN semua data uji (type mengandung 'ZZZ' atau data test) setelah selesai. Auth admin/admin123 (username).
-      3) Linking antar modul: buat 1 record smt_stock via API dengan ics_no+type yang ADA di master tapi TANPA
-         mengisi 'product' → saat GET /api/datasets/smt-stock (atau list stock) product harus terisi otomatis dari
-         master (product_map). Begitu juga tt_assy/material/unit mengalir ke Kebutuhan (production_needs view).
-      4) Regresi CRUD items tetap jalan (create/update/delete) & filter items by product/lane/type/ics.
-      Bersihkan data uji yang dibuat. Base URL REACT_APP_BACKEND_URL + /api. Auth username admin/admin123.
+      REVISI BESAR 4 MODUL (test BACKEND menyeluruh + sinkronisasi antar-modul). Dataset name & endpoint:
+      smt-production, smt-stock, production-needs, variance, items, stock-standards. Auth username admin/admin123.
+      Catatan: data transaksi mulai KOSONG; Master Item 618 item (ada proses_mesin). Buat data uji sendiri lalu BERSIHKAN.
+      1) STOCK PART (smt-stock): field baru shift (SHIFT 3/1/2) + group1..group6 + part_ragu. Total = group1..6 + part_ragu.
+         Kolom lama (coating/belum_*/ok/stock_ok_prev) sudah dihapus. indikator = Total vs Standar Stock. proses_mesin & product
+         terisi otomatis dari Master Item saat LIST (berdasarkan ics_no+type). Uji create (shift 3/1/2), total benar, filter ?shift=SHIFT 1 & ?shift=SHIFT 3, filter ?proses_mesin=INJECTION.
+      2) PRODUKSI (smt-production): field baru shift + plan_injection/act_injection/plan_eva/act_eva/plan_assy/act_assy.
+         total_act=sum semua act; total_act_part=act_injection+act_eva; total_act_assy=act_assy; plan_part=plan_injection+plan_eva;
+         achv = (act_inj+act_eva+act_assy)/(plan_inj+plan_eva+plan_assy)*100. Uji create + verifikasi nilai hitung; filter shift & proses_mesin.
+      3) KEBUTUHAN (production-needs, read-only view): agregasi per Tanggal+ICS+Type. Indikator kondisi per shift:
+         shift3 ON jika ada record Produksi shift 'SHIFT 3' dgn PLAN apa pun >0; shift1 & shift2 ON jika ada record shift tsb dgn PLAN INJECTION >0.
+         SINKRONISASI: buat 2 produksi utk ics+type+tanggal sama, satu shift 'SHIFT 3' (plan_eva>0, plan_injection=0), satu shift 'SHIFT 1' (plan_injection>0);
+         GET production-needs utk key itu → shift3=ON, shift1=ON, shift2=OFF. Ubah PLAN jadi 0 → indikator jadi OFF (otomatis ikut). Uji filter proses_mesin.
+      4) VARIANCE: smt_total kini = sum total_act_part (act_inj+act_eva) per key; assy_total = sum act_assy. Uji variance_view tidak error,
+         stock_sistem = total_stock_prev + smt_total - assy_total. proses_mesin filter ada.
+      5) DASHBOARD /dashboard/summary: tidak error; smt_total pakai total_act_part; stock_breakdown = Group1..6 + Part Ragu-ragu; smt_by_lane punya injection/eva/assy.
+      6) meta/options mengandung shifts (SHIFT 3/1/2) & proses_mesin (distinct dari Master Item). PROSES MESIN tidak hardcoded.
+      7) Pastikan modul lain (Master Item, Standar Stock, Users, Backup) tetap berfungsi & tidak ada data existing hilang (items tetap 618).
+      BERSIHKAN semua data uji. Jangan ubah kode.
     -agent: "testing"
     -message: |
       BACKEND ALL PASS. DB part_production terkonfirmasi terpisah: 119 master item, transaksi
@@ -574,3 +588,168 @@ agent_communication:
       
       🎉 BUGFIX WORKING PERFECTLY - ALL REQUIREMENTS MET
       Import functionality for Master Item and Standar Stock modules fully operational.
+    -agent: "testing"
+    -message: |
+      ❌ CRITICAL BUG FOUND + ✅ 6/7 TESTS PASSED - 4-MODULE REVISION COMPREHENSIVE TEST
+      
+      Test script: /app/backend_test_comprehensive.py
+      All test data cleaned up: 3 production + 5 stock records deleted.
+      
+      🚨 CRITICAL BUG: UNIQUE KEY CONSTRAINT PREVENTS MULTIPLE SHIFTS PER DAY
+      Backend enforces unique key (date, ics_no, type) for smt_production (line 592 in server.py),
+      preventing multiple records with same date+ics+type but different shifts.
+      
+      DESIGN CONFLICT:
+      • needs_view function (lines 727-791) expects multiple production records per date+ics+type
+        with different shifts to aggregate shift indicators (shift3/shift1/shift2 ON/OFF)
+      • CRUD layer enforces unique constraint WITHOUT shift field in key
+      • Review request explicitly asks to "Create TWO production records SAME date+ics+type"
+      
+      IMPACT:
+      • Cannot create multiple production records for different shifts on same day for same item
+      • Breaks intended cross-module sync design for shift indicators
+      • User cannot input production data for SHIFT 3, SHIFT 1, SHIFT 2 separately for same item/day
+      
+      WORKAROUND USED IN TESTING:
+      Created records with different dates to test shift indicator logic and verify formulas.
+      
+      ✅ TEST RESULTS (6/7 PASSED):
+      
+      ✅ (1) STOCK PART (smt-stock) - PASS
+         • Schema: shift + group1-6 + part_ragu fields present
+         • Computed: total = sum(group1-6 + part_ragu) verified (215.0, 250.0, 107.0)
+         • Status: "OK" when total>0, "KOSONG" when total=0
+         • Auto-fill: proses_mesin and product populated from Master Item on LIST
+         • Filters: shift filter working (SHIFT 3/1/2), proses_mesin filter working
+      
+      ✅ (2) PRODUKSI (smt-production) - PASS
+         • Schema: shift + plan_injection/act_injection/plan_eva/act_eva/plan_assy/act_assy
+         • Computed fields verified:
+           - total_act = 145.0 (act_injection + act_eva + act_assy)
+           - total_plan = 180.0 (plan_injection + plan_eva + plan_assy)
+           - total_act_part = 120.0 (act_injection + act_eva)
+           - total_act_assy = 25.0 (act_assy)
+           - plan_part = 150.0 (plan_injection + plan_eva)
+           - achv = 80.6% (total_act / total_plan * 100)
+           - balance = 95.0 (total_act_part - total_act_assy)
+         • Filters: shift filter working, proses_mesin filter working
+      
+      ❌ (3) KEBUTUHAN (production-needs) - PARTIAL PASS (with workaround)
+         • Cross-module sync logic working correctly
+         • shift3 = "ON" when any PLAN>0 in SHIFT 3 record
+         • shift1/shift2 = "ON" when plan_injection>0 in respective shift record
+         • kondisi_produksi = "ON" when any shift active
+         • Live sync verified: updating production plans immediately reflects in production-needs
+         • proses_mesin field present, filter working
+         • ⚠️ CANNOT TEST MULTIPLE SHIFTS PER DAY due to unique key constraint
+      
+      ✅ (4) VARIANCE - PASS
+         • Formula verified: stock_sistem = total_stock_prev + smt_total - assy_total
+         • Test case: 100 + 120 - 20 = 200 (expected), actual_stock=150, variance=-50
+         • smt_total correctly uses sum of total_act_part (act_injection + act_eva)
+         • assy_total correctly uses sum of act_assy
+         • proses_mesin field present, filter working
+      
+      ✅ (5) DASHBOARD (/api/dashboard/summary) - PASS
+         • Returns without error (200 OK)
+         • KPI structure correct: smt_total uses total_act_part (verified: 330.0)
+         • stock_breakdown: 7 items (Group 1, Group 2, Group 3, Group 4, Group 5, Group 6, Part Ragu-ragu)
+         • smt_by_lane: entries have injection/eva/assy keys (verified with 1 lane)
+      
+      ✅ (6) META (/api/meta/options) - PASS
+         • shifts: ['SHIFT 3', 'SHIFT 1', 'SHIFT 2'] (correct order, not hardcoded)
+         • proses_mesin: ['BOTTOM COAT', 'HARD COAT', 'INJECTION', 'PAINTING', 'VAKUM']
+         • Sourced from Master Item distinct values (not hardcoded)
+         • All 5 expected values present
+      
+      ✅ (7) REGRESSION - PASS
+         • Master Item: 618 items (exact count)
+         • Standar Stock: endpoint working (0 records)
+         • Users: 6 users (admin + 5 demo users)
+         • Backup: export working (20121 bytes)
+      
+      🔧 RECOMMENDATION FOR MAIN AGENT:
+      Choose ONE of these solutions:
+      
+      OPTION 1 (RECOMMENDED): Modify unique key to include shift
+      • Change line 592 in server.py:
+        key = {"date": d["date"], "ics_no": d["ics_no"], "type": d["type"], "shift": d["shift"]}
+      • This allows multiple records per day with different shifts
+      • Matches the needs_view design expectation
+      
+      OPTION 2: Remove unique key constraint entirely
+      • Allow duplicate records (user responsibility to avoid)
+      • More flexible but riskier
+      
+      OPTION 3: Change needs_view logic
+      • Redesign to work with single record per day
+      • Store all shift data in one record (complex schema change)
+      
+      EVIDENCE OF BUG:
+      • Review request: "Create TWO production records SAME date+ics+type"
+      • Actual result: 409 DUPLICATE error when attempting second record
+    -agent: "testing"
+    -message: |
+      ✅ CROSS-MODULE SYNC RE-VERIFICATION COMPLETE - ALL 23 TESTS PASSED
+      
+      Re-verified the unique-key bugfix and cross-module sync as requested. Main agent successfully fixed the critical bug by including shift in the unique key constraint.
+      
+      Test script: /app/backend_test_cross_module_sync.py
+      Test credentials: admin/admin123 (from /app/memory/test_credentials.md)
+      Base URL: https://data-stock-branch.preview.emergentagent.com/api
+      Master item used: ics_no=5825091000, type=003, product=REGULER
+      
+      PRIMARY TESTS (CROSS-MODULE SYNC) - ALL PASSED:
+      ✅ (1) UNIQUE KEY WITH SHIFT: Created TWO production records with SAME date+ics+type, DIFFERENT shifts
+          - Record A: date=2026-10-05, ics_no=5825091000, type=003, shift=SHIFT 3, plan_injection=0, plan_eva=50, plan_assy=0 → HTTP 200 (NOT 409)
+          - Record B: SAME date+ics+type, shift=SHIFT 1, plan_injection=60 → HTTP 200 (NOT 409)
+          - Both records persist: count=2, shifts=['SHIFT 3', 'SHIFT 1']
+          - EVIDENCE: Unique key bug FIXED. Backend now allows multiple records per day with different shifts.
+      
+      ✅ (2) PRODUCTION-NEEDS SHIFT INDICATORS: Cross-module sync working correctly
+          - GET /api/production-needs for key (date=2026-10-05, ics_no=5825091000, type=003)
+          - Result: shift3=ON (plan_eva=50>0), shift1=ON (plan_injection=60>0), shift2=OFF, kondisi_produksi=ON
+          - EVIDENCE: Shift indicators correctly aggregate from multiple production records with different shifts.
+      
+      ✅ (3) LIVE SYNC: Production plan updates immediately reflect in production-needs
+          - Update Record A: plan_eva=50 → 0 → Re-GET production-needs → shift3 flipped to OFF ✓
+          - Update Record B: plan_injection=60 → 0 → Re-GET production-needs → shift1 flipped to OFF, kondisi_produksi flipped to OFF ✓
+          - EVIDENCE: Live sync working. Changes to production plans immediately update shift indicators in production-needs view.
+      
+      ✅ (4) SHIFT 2 RECORD: Created SHIFT 2 record with plan_injection=5 for same key → shift2 became ON ✓
+          - EVIDENCE: All three shifts (SHIFT 3, SHIFT 1, SHIFT 2) can coexist for same date+ics+type.
+      
+      SECONDARY TESTS (REGRESSION) - ALL PASSED:
+      ✅ (5) SMT-STOCK: Multiple shifts per day working
+          - Created two stock records with SAME date+ics+type, DIFFERENT shifts (SHIFT 3, SHIFT 1) → Both HTTP 200 (NOT 409)
+          - Total computation correct: 215.0 (sum of group1-6 + part_ragu)
+          - Shift filter working: ?shift=SHIFT 3 returns correct records
+          - Proses_mesin filter working: HTTP 200
+      
+      ✅ (6) SMT-PRODUCTION: Computed fields and filters working
+          - All computed fields present: total_act, total_plan, total_act_part, total_act_assy, plan_part, achv, balance
+          - Shift filter working: ?shift=SHIFT 3 returns correct records
+      
+      ✅ (7) VARIANCE: Endpoint working (HTTP 200)
+      ✅ (8) DASHBOARD: Endpoint working (HTTP 200)
+      ✅ (9) META OPTIONS: shifts and proses_mesin present
+      ✅ (10) MASTER ITEM: Count=618 (unchanged)
+      
+      CLEANUP VERIFICATION:
+      ✅ All test data cleaned up: 3 production records + 2 stock records deleted
+      ✅ Master item count verified: 618 (unchanged after cleanup)
+      
+      🎯 FINAL VERDICT: PASS ✅
+      The unique key bug has been FIXED. Backend now correctly includes shift in the unique key for both smt_production and smt_stock (lines 593-594 in server.py).
+      Unique key: (date, ics_no, type, shift)
+      
+      CROSS-MODULE SYNC FULLY FUNCTIONAL:
+      - Multiple production records with different shifts can coexist for same date+ics+type
+      - Production-needs view correctly aggregates shift indicators from multiple records
+      - Live sync works: updating production plans immediately reflects in production-needs
+      - All shift indicators (shift3, shift1, shift2, kondisi_produksi) work correctly
+      
+      NO ISSUES FOUND. All backend APIs working correctly.
+
+      • needs_view code (line 731-733): groups.setdefault(k, []).append(x) - expects list of records
+      • shift_on function (line 753-761): iterates over multiple records per key
