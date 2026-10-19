@@ -233,6 +233,20 @@ backend:
         -working: true
         -agent: "testing"
         -comment: "✅ ALL 23 TESTS PASSED - UNIQUE KEY BUG FIXED + CROSS-MODULE SYNC VERIFIED. Test script: /app/backend_test_cross_module_sync.py. BUGFIX CONFIRMED: Main agent successfully modified unique key constraint to include shift (lines 593-594 in server.py). Unique key now: (date, ics_no, type, shift) for both smt_production and smt_stock. PRIMARY TESTS (CROSS-MODULE SYNC): ✅ (1) Create TWO production records with SAME date+ics+type, DIFFERENT shifts: Record A (SHIFT 3, plan_eva=50) HTTP 200, Record B (SHIFT 1, plan_injection=60) HTTP 200 (NOT 409). Both records persist, count=2. ✅ (2) Production-needs shift indicators: shift3=ON (plan_eva>0), shift1=ON (plan_injection>0), shift2=OFF, kondisi_produksi=ON. ✅ (3) LIVE SYNC: Update Record A plan_eva=0 → shift3 flips to OFF. Update Record B plan_injection=0 → shift1 flips to OFF, kondisi_produksi flips to OFF. ✅ (4) Create SHIFT 2 record (plan_injection=5) → shift2 becomes ON. SECONDARY TESTS (REGRESSION): ✅ (5) SMT-STOCK: Create two records with different shifts, same date+ics+type, both succeed (HTTP 200). Total computed correctly (215.0). Shift filter working (SHIFT 3/1/2). Proses_mesin filter working. ✅ (6) SMT-PRODUCTION: Computed fields correct (total_act, total_plan, total_act_part, total_act_assy, plan_part, achv, balance). Shift filter working. ✅ (7) VARIANCE: Endpoint working (HTTP 200). ✅ (8) DASHBOARD: Endpoint working (HTTP 200). ✅ (9) META OPTIONS: shifts and proses_mesin present. ✅ (10) MASTER ITEM: Count=618 (unchanged). CLEANUP: All 3 production + 2 stock test records deleted. Item count verified 618 after cleanup. EVIDENCE: HTTP 200 for both creates (NOT 409), shift indicators ON/OFF transitions working correctly, live sync immediate reflection confirmed. CROSS-MODULE SYNC FULLY FUNCTIONAL."
+  - task: "Dashboard Summary Endpoint (resume + smt_trend) dengan formula part_production, lamp_assy, achievement, shortage"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Dashboard endpoint /api/dashboard/summary dengan response structure: resume{part_production, lamp_assy, shortage, achievement{gt97,mid,lt90}}, smt_trend. Formula: part_production.total_plan=SUM(plan_injection+plan_eva), act_prod=SUM(act_injection+act_eva), pct=act/plan*100. lamp_assy.total_plan=SUM(plan_assy), act_prod=SUM(act_assy). Achievement per TYPE: ach=(sum act_part/sum plan_part)*100, buckets gt97(>97), mid(90-97), lt90(<90), exclude plan=0. Shortage per TYPE unik dari production-needs: shortage(blc<0), potensi(aktif & waktu_shortage<8h & blc>=0), tidak(selain). Trend per DATE agregasi lintas shift tanpa double count. Edge: plan=0 tidak error (pct=0), filter product & date_from/date_to."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ ALL 9 TESTS PASSED - Dashboard Summary Endpoint Fully Verified. Test script: /app/backend_test_dashboard.py. Detailed report: /app/dashboard_test_report.md. TEST RESULTS: ✅ (1) RESPONSE STRUCTURE: resume.part_production{total_plan,act_prod,pct}, resume.lamp_assy{total_plan,act_prod,pct}, resume.shortage{total_part,tidak_shortage,potensi_shortage,shortage}, resume.achievement{gt97,mid,lt90 each with total_plan,act,average}, smt_trend array with {date,plan,actual,pct}. ✅ (2) FORMULAS: part_production.total_plan=330.0 (exp 330.0), act_prod=300.0 (exp 300.0), pct=90.9 (exp 90.9); lamp_assy.total_plan=170.0 (exp 170.0), act_prod=160.0 (exp 160.0), pct=94.1 (exp 94.1). All formulas verified with manual calculations. ✅ (3) ACHIEVEMENT CATEGORIES: Created 3 types with DISTINCT types (99%, 93%, 85% achievement). gt97: total_plan=1, act=1, avg=99.0; mid: total_plan=1, act=1, avg=93.0; lt90: total_plan=1, act=1, avg=85.0. Types with plan_part=0 correctly EXCLUDED. ✅ (4) SHORTAGE: Created 2 types (shortage & tidak/potensi). total_part=2, shortage=1, potensi_shortage=1. Highest severity per TYPE working correctly. ✅ (5) TREND AGGREGATION: Created 2 records SAME date+type, DIFFERENT shifts. Trend point: plan=330.0 (exp 330.0), actual=300.0 (exp 300.0), pct=90.9 (exp 90.9). No double counting confirmed. ✅ (6) EDGE CASES: plan=0 no divide-by-zero (pct=0), product filter works, date_from/date_to filter works. ✅ (7) REGRESSION: meta/options OK (shifts, proses_mesin present), items count=618, dashboard with empty data returns 200. CLEANUP: All 14 test records deleted, items count verified 618 after cleanup. NO ISSUES FOUND. All formulas calculate correctly, all edge cases handled properly."
 
 frontend:
   - task: "Rebrand UI PART PRODUCTION (menu, judul, dashboard, login)"
@@ -250,20 +264,51 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 3
+  test_sequence: 4
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "All backend tasks completed and verified"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
+    -agent: "testing"
+    -message: |
+      ✅ DASHBOARD SUMMARY ENDPOINT TESTING COMPLETE - ALL 9 TESTS PASSED
+      
+      Comprehensive testing completed for GET /api/dashboard/summary endpoint.
+      Test script: /app/backend_test_dashboard.py
+      Detailed report: /app/dashboard_test_report.md
+      
+      VERIFICATION RESULTS (ALL PASS):
+      1) ✅ Response Structure: resume{part_production, lamp_assy, shortage, achievement{gt97,mid,lt90}}, smt_trend array - all fields present
+      2) ✅ Formulas: part_production & lamp_assy formulas verified with manual calculations (plan=330→330, act=300→300, pct=90.9→90.9)
+      3) ✅ Achievement Categories: 3 types with 99%/93%/85% achievement correctly categorized into gt97/mid/lt90 buckets. Types with plan=0 correctly excluded.
+      4) ✅ Shortage: 2 types tested (shortage & potensi), counts correct (total_part=2, shortage=1, potensi=1)
+      5) ✅ Trend Aggregation: Cross-shift aggregation working correctly, no double counting (2 shifts same date → plan=330, actual=300)
+      6) ✅ Edge Cases: plan=0 no divide-by-zero (pct=0), product filter works, date_from/date_to filter works
+      7) ✅ Regression: meta/options OK, items count=618, dashboard with empty data returns 200
+      
+      DATA CLEANUP: All 14 test records deleted, items count verified 618 after cleanup.
+      
+      NO ISSUES FOUND. Dashboard endpoint is production-ready.
     -agent: "main"
     -message: |
-      REVISI BESAR 4 MODUL (test BACKEND menyeluruh + sinkronisasi antar-modul). Dataset name & endpoint:
+      DASHBOARD REVISI (test BACKEND endpoint /api/dashboard/summary + formula). Auth admin/admin123 (username).
+      Transaksi mulai KOSONG; Master Item 618. Buat data uji sendiri lalu BERSIHKAN. VERIFIKASI:
+      1) Response punya "resume": part_production{total_plan,act_prod,pct}, lamp_assy{...}, shortage{total_part,tidak_shortage,potensi_shortage,shortage}, achievement{gt97,mid,lt90 => {total_plan,act,average}}; "smt_trend" tiap titik {date,plan,actual,pct}.
+      2) FORMULA: part_production.total_plan=SUM(plan_injection+plan_eva); act_prod=SUM(act_injection+act_eva); pct=act/plan*100. lamp_assy.total_plan=SUM(plan_assy); act_prod=SUM(act_assy). Cocokkan manual.
+      3) KATEGORI per TYPE: ach=(sum act_part/sum plan_part)*100 → gt97(>97), mid(90..97 inklusif), lt90(<90). plan_part=0 TIDAK dikategorikan. act=jumlah type act_part>0; average=rata2 ach. Buat 3 type ach ~99/~93/~85, verifikasi.
+      4) SHORTAGE per TYPE unik (dari production-needs): shortage(blc<0), potensi(aktif & waktu_shortage<8jam & blc>=0), tidak(selain). total_part=type unik, severity tertinggi per type.
+      5) Trend per TANGGAL agregasi lintas shift tanpa double count (2 shift sama tanggal+type → plan/actual=jumlah). pct=actual/plan*100.
+      6) EDGE plan=0 tidak error (pct=0). Filter product & date_from/date_to.
+      7) Regресi: meta/options, list modul, items 618 tetap OK.
+      BERSIHKAN semua data uji. Jangan ubah kode.
+    -agent: "ignore_old"
+    -message: |
+      (arsip) REVISI BESAR 4 MODUL (test BACKEND menyeluruh + sinkronisasi antar-modul). Dataset name & endpoint:
       smt-production, smt-stock, production-needs, variance, items, stock-standards. Auth username admin/admin123.
       Catatan: data transaksi mulai KOSONG; Master Item 618 item (ada proses_mesin). Buat data uji sendiri lalu BERSIHKAN.
       1) STOCK PART (smt-stock): field baru shift (SHIFT 3/1/2) + group1..group6 + part_ragu. Total = group1..6 + part_ragu.

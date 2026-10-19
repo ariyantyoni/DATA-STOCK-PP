@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import api, { fmtNum, fmtPct } from "@/lib/api";
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, PieChart, Pie, Cell, Legend,
+  Tooltip, PieChart, Pie, Cell, Legend, ComposedChart, Line, ReferenceLine,
 } from "recharts";
 import { Input } from "@/components/ui/input";
 import {
@@ -20,6 +20,23 @@ function TooltipBox({ active, payload, label }) {
       {payload.map((p) => (
         <p key={p.name} style={{ color: p.color }}>{p.name}: {fmtNum(p.value)}</p>
       ))}
+    </div>
+  );
+}
+
+function MetricCard({ title, cols, testId }) {
+  return (
+    <div data-testid={testId} className="rounded-xl border border-border bg-card/70 p-5 hover:border-primary/30 transition-colors">
+      <p className="text-xs font-mono-data uppercase tracking-wider text-muted-foreground mb-4 font-semibold">{title}</p>
+      <div className="flex items-start justify-between gap-2">
+        {cols.map((c) => (
+          <div key={c.label} className="flex-1 text-center">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1 leading-tight">{c.label}</p>
+            <p className={cn("font-heading text-3xl sm:text-4xl font-bold tracking-tight tabular-nums", c.accent || "text-foreground")}>{c.value}</p>
+            {c.unit && <p className="text-[10px] font-mono-data text-muted-foreground mt-0.5">{c.unit}</p>}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -80,6 +97,7 @@ export default function Dashboard() {
     return <div className="flex items-center justify-center py-32"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
   const k = data.kpi;
+  const r = data.resume;
   const axis = { fill: "var(--axis)", fontSize: 11 };
 
   return (
@@ -109,46 +127,58 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <KpiCard testId="kpi-smt" icon={Cpu} label="Total Produksi Part" value={fmtNum(k.smt_total)}
-          sub={`Planing ${fmtNum(k.smt_plan)} · Achv ${fmtPct(k.smt_achievement)}`}
-          accent={k.smt_achievement >= 100 ? "text-emerald-600" : "text-cyan-600"} />
-        <KpiCard testId="kpi-assy" icon={Lightbulb} label="Total Act Assy" value={fmtNum(k.assy_total)}
-          sub={`Plan ${fmtNum(k.plan_assy)} · Achv ${fmtPct(k.assy_achievement)} · Balance ${k.balance > 0 ? "+" : ""}${fmtNum(k.balance)}`}
-          accent={k.balance >= 0 ? "text-emerald-600" : "text-red-600"} />
-        <KpiCard testId="kpi-shortage" icon={AlertTriangle} label="Item Shortage (BLC < 0)" value={fmtNum(k.shortage_count)}
-          sub={`dari ${fmtNum(k.needs_items)} item kebutuhan`} accent={k.shortage_count > 0 ? "text-red-600" : "text-emerald-600"} />
-        <KpiCard testId="kpi-variance" icon={Scale} label="Item Variance" value={fmtNum(k.variance_count)}
-          sub={`Total selisih ${k.variance_sum > 0 ? "+" : ""}${fmtNum(k.variance_sum)} pcs`} accent={k.variance_count > 0 ? "text-amber-600" : "text-emerald-600"} />
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <KpiCard testId="kpi-stock-ok" icon={Boxes} label="Total Stock Part" value={fmtNum(k.stock_total)} sub={k.stock_date ? `per ${k.stock_date}` : ""} accent="text-emerald-600" />
-        <KpiCard testId="kpi-stock-total" icon={Layers} label="Jumlah Item Stock" value={fmtNum(k.stock_items)} sub="baris data stock" accent="text-primary" />
-        <KpiCard testId="kpi-stock-wip" icon={Layers} label="Plan Produksi Part" value={fmtNum(k.smt_plan)} sub="Injection + EVA" accent="text-amber-600" />
-        <KpiCard testId="kpi-plan" icon={Lightbulb} label="Item Produksi" value={fmtNum(k.smt_items)} sub="baris Part & ASSY" accent="text-orange-600" />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <MetricCard testId="resume-part" title="PRODUKSI PART PRODUCTION" cols={[
+          { label: "Total Plan", value: fmtNum(r.part_production.total_plan), unit: "Pcs" },
+          { label: "Act Prod", value: fmtNum(r.part_production.act_prod), unit: "Pcs", accent: "text-cyan-400" },
+          { label: "Pencapaian", value: fmtNum(r.part_production.pct), unit: "%", accent: r.part_production.pct >= 100 ? "text-emerald-400" : "text-amber-400" },
+        ]} />
+        <MetricCard testId="resume-assy" title="PRODUKSI LAMP ASSY" cols={[
+          { label: "Total Plan", value: fmtNum(r.lamp_assy.total_plan), unit: "Pcs" },
+          { label: "Act Prod", value: fmtNum(r.lamp_assy.act_prod), unit: "Pcs", accent: "text-cyan-400" },
+          { label: "Pencapaian", value: fmtNum(r.lamp_assy.pct), unit: "%", accent: r.lamp_assy.pct >= 100 ? "text-emerald-400" : "text-amber-400" },
+        ]} />
+        <MetricCard testId="resume-shortage" title="ITEM SHORTAGE" cols={[
+          { label: "Total Part", value: fmtNum(r.shortage.total_part), unit: "Type" },
+          { label: "Tidak Shortage", value: fmtNum(r.shortage.tidak_shortage), unit: "Type", accent: "text-emerald-400" },
+          { label: "Potensi Shortage", value: fmtNum(r.shortage.potensi_shortage), unit: "Type", accent: "text-amber-400" },
+          { label: "Shortage", value: fmtNum(r.shortage.shortage), unit: "Type", accent: "text-red-500" },
+        ]} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Panel icon={TrendingUp} title="Trend Produksi Part & ASSY (Plan vs Actual)" className="lg:col-span-2">
-          <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={data.smt_trend}>
-              <defs>
-                <linearGradient id="gActual" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#f97316" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
-                </linearGradient>
-              </defs>
+        <MetricCard testId="resume-achv-high" title="PENCAPAIAN PART PRODUCTION (>97%)" cols={[
+          { label: "Total Plan", value: fmtNum(r.achievement.gt97.total_plan), unit: "Type" },
+          { label: "Act", value: fmtNum(r.achievement.gt97.act), unit: "Type", accent: "text-cyan-400" },
+          { label: "Average", value: fmtNum(r.achievement.gt97.average), unit: "%", accent: "text-emerald-400" },
+        ]} />
+        <MetricCard testId="resume-achv-mid" title="PENCAPAIAN PART PRODUCTION (90-96%)" cols={[
+          { label: "Total Plan", value: fmtNum(r.achievement.mid.total_plan), unit: "Type" },
+          { label: "Act", value: fmtNum(r.achievement.mid.act), unit: "Type", accent: "text-cyan-400" },
+          { label: "Average", value: fmtNum(r.achievement.mid.average), unit: "%", accent: "text-amber-400" },
+        ]} />
+        <MetricCard testId="resume-achv-low" title="PENCAPAIAN PART PRODUCTION (<90%)" cols={[
+          { label: "Total Plan", value: fmtNum(r.achievement.lt90.total_plan), unit: "Type" },
+          { label: "Act", value: fmtNum(r.achievement.lt90.act), unit: "Type", accent: "text-cyan-400" },
+          { label: "Average", value: fmtNum(r.achievement.lt90.average), unit: "%", accent: "text-red-500" },
+        ]} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Panel icon={TrendingUp} title="MONITORING PENCAPAIAN PART PRODUCTION" className="lg:col-span-2">
+          <ResponsiveContainer width="100%" height={300}>
+            <ComposedChart data={data.smt_trend}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--grid)" />
               <XAxis dataKey="date" tick={axis} tickFormatter={(d) => d?.slice(5)} />
-              <YAxis tick={axis} />
+              <YAxis yAxisId="left" tick={axis} label={{ value: "Pcs", angle: -90, position: "insideLeft", fill: "var(--axis)", fontSize: 11 }} />
+              <YAxis yAxisId="right" orientation="right" tick={axis} domain={[0, 120]} tickFormatter={(v) => `${v}%`} />
               <Tooltip content={<TooltipBox />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Area type="monotone" dataKey="actual" name="Total Act Part" stroke="#0ea5e9" fill="url(#gActual)" strokeWidth={2} />
-              <Area type="monotone" dataKey="plan" name="Planing Part" stroke="#0ea5e9" fill="none" strokeWidth={2} strokeDasharray="4 4" />
-              <Area type="monotone" dataKey="actual_assy" name="Total Act Assy" stroke="#f97316" fill="none" strokeWidth={2} />
-              <Area type="monotone" dataKey="plan_assy" name="Plan Assy" stroke="#f59e0b" fill="none" strokeWidth={2} strokeDasharray="4 4" />
-            </AreaChart>
+              <ReferenceLine yAxisId="right" y={100} stroke="#ef4444" strokeDasharray="5 4" />
+              <Bar yAxisId="left" dataKey="plan" name="PLAN" fill="#84cc16" radius={[2, 2, 0, 0]} />
+              <Bar yAxisId="left" dataKey="actual" name="ACTUAL" fill="#f97316" radius={[2, 2, 0, 0]} />
+              <Line yAxisId="right" type="monotone" dataKey="pct" name="%" stroke="#38bdf8" strokeWidth={2.5} dot={{ r: 2 }} />
+            </ComposedChart>
           </ResponsiveContainer>
         </Panel>
 

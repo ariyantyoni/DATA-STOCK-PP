@@ -893,6 +893,43 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
     shortage_items = [n for n in needs if n.get("status") == "SHORTAGE"]
     variance_items = [v for v in var if v.get("variance") not in (None, 0)]
 
+    # Pencapaian Part Production per TYPE (plan_part = PLAN INJECTION + PLAN EVA; act_part = ACT INJECTION + ACT EVA)
+    type_agg = {}
+    for x in smt:
+        a = type_agg.setdefault(x.get("type") or "-", {"plan": 0.0, "act": 0.0})
+        a["plan"] += num(x.get("plan_part")); a["act"] += num(x.get("total_act_part"))
+    cat = {"gt97": [], "mid": [], "lt90": []}
+    for typ, a in type_agg.items():
+        if a["plan"] <= 0:   # type dengan Plan = 0 tidak dikategorikan sebagai 0% otomatis
+            continue
+        ach = a["act"] / a["plan"] * 100
+        bucket = "gt97" if ach > 97 else ("mid" if ach >= 90 else "lt90")
+        cat[bucket].append((a, ach))
+
+    def cat_summary(lst):
+        return {"total_plan": len(lst), "act": sum(1 for a, _ in lst if a["act"] > 0),
+                "average": round(sum(ac for _, ac in lst) / len(lst), 1) if lst else 0.0}
+
+    # Item Shortage per TYPE unik (SHORTAGE: blc<0 ; POTENSI: aktif & stok masih cukup tapi Waktu Shortage < 8 jam)
+    POTENSI_JAM = 8.0
+    type_sev = {}
+    for n in needs:
+        typ = n.get("type") or "-"
+        blc = num(n.get("blc")); ws = n.get("waktu_shortage")
+        if blc < 0:
+            sev = 2
+        elif n.get("kondisi_produksi") == "ON" and ws is not None and ws < POTENSI_JAM:
+            sev = 1
+        else:
+            sev = 0
+        type_sev[typ] = max(type_sev.get(typ, -1), sev)
+    shortage = {
+        "total_part": len(type_sev),
+        "tidak_shortage": sum(1 for s in type_sev.values() if s == 0),
+        "potensi_shortage": sum(1 for s in type_sev.values() if s == 1),
+        "shortage": sum(1 for s in type_sev.values() if s == 2),
+    }
+
     def trend(rows, keys):
         m = {}
         for x in rows:
@@ -911,6 +948,10 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
     stock_breakdown = [{"name": f"Group {i}", "value": sum(num(x.get(f"group{i}")) for x in stock)} for i in range(1, 7)]
     stock_breakdown.append({"name": "Part Ragu-ragu", "value": sum(num(x.get("part_ragu")) for x in stock)})
 
+    part_trend = trend(smt, {"plan": "plan_part", "actual": "total_act_part", "plan_assy": "plan_assy", "actual_assy": "total_act_assy"})
+    for e in part_trend:
+        e["pct"] = round(e["actual"] / e["plan"] * 100, 1) if e.get("plan") else 0.0
+
     return {
         "kpi": {
             "smt_total": smt_total, "smt_items": len(smt), "smt_plan": smt_plan,
@@ -923,8 +964,16 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
             "variance_count": len(variance_items), "variance_items": len(var),
             "variance_sum": sum(num(v.get("variance")) for v in var),
         },
+        "resume": {
+            "part_production": {"total_plan": r1(smt_plan), "act_prod": r1(smt_total),
+                                "pct": round(smt_total / smt_plan * 100, 1) if smt_plan else 0.0},
+            "lamp_assy": {"total_plan": r1(plan_assy), "act_prod": r1(assy_total),
+                          "pct": round(assy_total / plan_assy * 100, 1) if plan_assy else 0.0},
+            "shortage": shortage,
+            "achievement": {"gt97": cat_summary(cat["gt97"]), "mid": cat_summary(cat["mid"]), "lt90": cat_summary(cat["lt90"])},
+        },
         "stock_breakdown": stock_breakdown,
-        "smt_trend": trend(smt, {"plan": "plan_part", "actual": "total_act_part", "plan_assy": "plan_assy", "actual_assy": "total_act_assy"}),
+        "smt_trend": part_trend,
         "smt_by_lane": sorted(by_lane.values(), key=lambda r: r["lane"]),
         "top_shortage": sorted(shortage_items, key=lambda n: n["blc"])[:6],
         "top_variance": sorted(variance_items, key=lambda v: abs(num(v.get("variance"))), reverse=True)[:6],
