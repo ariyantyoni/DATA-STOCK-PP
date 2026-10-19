@@ -247,6 +247,48 @@ backend:
         -working: true
         -agent: "testing"
         -comment: "✅ ALL 9 TESTS PASSED - Dashboard Summary Endpoint Fully Verified. Test script: /app/backend_test_dashboard.py. Detailed report: /app/dashboard_test_report.md. TEST RESULTS: ✅ (1) RESPONSE STRUCTURE: resume.part_production{total_plan,act_prod,pct}, resume.lamp_assy{total_plan,act_prod,pct}, resume.shortage{total_part,tidak_shortage,potensi_shortage,shortage}, resume.achievement{gt97,mid,lt90 each with total_plan,act,average}, smt_trend array with {date,plan,actual,pct}. ✅ (2) FORMULAS: part_production.total_plan=330.0 (exp 330.0), act_prod=300.0 (exp 300.0), pct=90.9 (exp 90.9); lamp_assy.total_plan=170.0 (exp 170.0), act_prod=160.0 (exp 160.0), pct=94.1 (exp 94.1). All formulas verified with manual calculations. ✅ (3) ACHIEVEMENT CATEGORIES: Created 3 types with DISTINCT types (99%, 93%, 85% achievement). gt97: total_plan=1, act=1, avg=99.0; mid: total_plan=1, act=1, avg=93.0; lt90: total_plan=1, act=1, avg=85.0. Types with plan_part=0 correctly EXCLUDED. ✅ (4) SHORTAGE: Created 2 types (shortage & tidak/potensi). total_part=2, shortage=1, potensi_shortage=1. Highest severity per TYPE working correctly. ✅ (5) TREND AGGREGATION: Created 2 records SAME date+type, DIFFERENT shifts. Trend point: plan=330.0 (exp 330.0), actual=300.0 (exp 300.0), pct=90.9 (exp 90.9). No double counting confirmed. ✅ (6) EDGE CASES: plan=0 no divide-by-zero (pct=0), product filter works, date_from/date_to filter works. ✅ (7) REGRESSION: meta/options OK (shifts, proses_mesin present), items count=618, dashboard with empty data returns 200. CLEANUP: All 14 test records deleted, items count verified 618 after cleanup. NO ISSUES FOUND. All formulas calculate correctly, all edge cases handled properly."
+  - task: "STOCK indikator dari Master Item std_stock_min/std_stock_max (bukan modul Standar Stock)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "STOCK indikator kini derive dari Master Item field std_stock_min/std_stock_max (bukan modul Standar Stock terpisah). Master Item schema ditambah field std_stock_min & std_stock_max. Function enrich_stock (line 732-747) mengisi indikator berdasarkan total vs std_stock_min/max: MINUS (total < min), PASS (min <= total <= max), OVER (total > max), BELUM DISET (min & max null). Field ics_name, group, std_stock_min, std_stock_max auto-filled dari Master Item saat GET /api/smt-stock via fill_product (line 701-710). Perlu testing: (1) Create master item dengan std_stock_min=100, std_stock_max=500. (2) Create smt-stock dengan total bervariasi: 50→MINUS, 300→PASS, 700→OVER. (3) Item tanpa std→BELUM DISET. (4) Verifikasi ics_name & group auto-filled."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ ALL TESTS PASSED - Stock Indikator from Master Item Fully Verified. Test script: /app/backend_test_batch.py. TEST RESULTS: ✅ (1.1) Created master item with std_stock_min=100, std_stock_max=500 (type=ZTS, ics_no=9990002220). ✅ (1.2) Created smt-stock with total=50 (group1=50) → indikator=MINUS (total < std_stock_min). ics_name='TEST STOCK INDIKATOR' and group='GROUP 1' auto-filled from master. ✅ (1.3) Created smt-stock with total=300 (group1=150, group2=150) → indikator=PASS (100 <= total <= 500). ✅ (1.4) Created smt-stock with total=700 (group1=200, group2=200, group3=200, group4=100) → indikator=OVER (total > std_stock_max). ✅ (1.5) Created master item WITHOUT std_stock_min/max (type=ZTNS, ics_no=9990002221) and smt-stock with total=100 → indikator=BELUM DISET (std_stock_min/max are None). EVIDENCE: All indikator values correctly computed based on Master Item std_stock_min/std_stock_max. ics_name and group fields auto-filled from master via product_map. CLEANUP: All 4 test master items + 4 test stock records deleted. Item count verified 618 after cleanup. NO ISSUES FOUND."
+  - task: "DASHBOARD group_composition (array 6 GROUP dengan total_type & shortage_type)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Dashboard /api/dashboard/summary kini mengembalikan 'group_composition': array 6 entries {group, total_type, shortage_type}. Logic (line 973-989): (1) total_type = jumlah TYPE UNIK di Master Item per GROUP (dari field group). (2) shortage_type = jumlah TYPE UNIK dengan status=SHORTAGE di production-needs per GROUP (via type_group mapping). (3) Hitung per GROUP 1-6, tidak double count type yang sama walau beda tanggal/shift. Perlu testing: (1) Set beberapa master item group=GROUP 1 → total_type GROUP 1 bertambah. (2) Buat produksi+stock shortage untuk salah satu type GROUP 1 → shortage_type GROUP 1 bertambah. (3) Verifikasi hitung type UNIK (tak dobel)."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ ALL TESTS PASSED - Dashboard group_composition Fully Verified. Test script: /app/backend_test_batch.py. TEST RESULTS: ✅ (2.1) Created 2 master items with group=GROUP 1 (distinct types ZTG1, ZTG2). ✅ (2.2) GET /api/dashboard/summary returned group_composition with 6 entries (GROUP 1-6). GROUP 1 total_type=3 (includes 2 new test types + 1 existing type ZTS from Test 1). ✅ (2.3) Created production (plan_assy=500) + stock (total=50) for type ZTG1 to trigger SHORTAGE. ✅ (2.4) GET /api/production-needs confirmed status=SHORTAGE for ZTG1 (blc=-450). ✅ (2.5) Re-GET /api/dashboard/summary confirmed GROUP 1 shortage_type=1 (counts ZTG1 as shortage type). ✅ (2.6) Verified group_composition has exactly 6 entries (GROUP 1-6), each with {group, total_type, shortage_type}. EVIDENCE: total_type correctly counts UNIQUE types per GROUP from Master Item. shortage_type correctly counts UNIQUE types with SHORTAGE status from production-needs. No double counting across dates/shifts. CLEANUP: All 2 test master items + 1 test production + 1 test stock deleted. Item count verified 618 after cleanup. NO ISSUES FOUND."
+  - task: "REGRESSION: Endpoint modul yang dihapus dari nav masih berfungsi di backend"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Modul smt-production, variance, stock-standards dihapus dari navigasi frontend (FASE 2+), tetapi endpoint backend HARUS tetap berfungsi (tidak dihapus). Perlu testing: (1) GET /api/smt-production → HTTP 200. (2) GET /api/variance → HTTP 200. (3) GET /api/stock-standards → HTTP 200. (4) GET /api/meta/options → groups (GROUP 1-6), shifts (SHIFT 3/1/2), proses_mesin (dari Master Item)."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ ALL TESTS PASSED - Regression Verified. Test script: /app/backend_test_batch.py. TEST RESULTS: ✅ (3.1) GET /api/smt-production → HTTP 200. GET /api/variance → HTTP 200. GET /api/stock-standards → HTTP 200. All removed-from-nav module endpoints still respond correctly. ✅ (3.2) GET /api/meta/options → HTTP 200. groups=['GROUP 1', 'GROUP 2', 'GROUP 3', 'GROUP 4', 'GROUP 5', 'GROUP 6']. shifts=['SHIFT 3', 'SHIFT 1', 'SHIFT 2']. proses_mesin=['BOTTOM COAT', 'HARD COAT', 'INJECTION', 'PAINTING', 'VAKUM'] (5 distinct values from Master Item, not hardcoded). EVIDENCE: All backend endpoints for removed-from-nav modules still functional. meta/options returns correct groups, shifts, and proses_mesin sourced from Master Item. NO ISSUES FOUND."
 
 frontend:
   - task: "Rebrand UI PART PRODUCTION (menu, judul, dashboard, login)"
@@ -264,16 +306,34 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 4
+  test_sequence: 5
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "FASE 2+ : hapus 3 modul dari nav, rename modul, Stock link master std (indikator), Dashboard group_composition + visual"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
+    -agent: "main"
+    -message: |
+      BATCH LANJUTAN (test BACKEND). Auth admin/admin123. Master Item 618. Buat data uji & BERSIHKAN (type 'ZT').
+      1) STOCK indikator kini dari Master Item std_stock_min/max (bukan modul Standar Stock): buat 1 master item type ZTS ics 9990002220 std_min=100 std_max=500. Buat smt-stock utk item itu dgn total via groups: (a) group1=50 → total 50 → indikator MINUS; (b) total 300 → PASS; (c) total 700 → OVER; item tanpa std → BELUM DISET. Verifikasi field indikator, ics_name, group ikut dari master di GET /api/smt-stock.
+      2) DASHBOARD /api/dashboard/summary punya "group_composition" (array 6 GROUP, {group,total_type,shortage_type}). Set beberapa master item group=GROUP 1 (via PATCH/POST) → total_type GROUP 1 bertambah. Buat produksi+stock shortage utk salah satu type GROUP 1 → shortage_type GROUP 1 bertambah. Verifikasi hitung type UNIK (tak dobel).
+      3) Regресi: endpoint smt-production, variance, stock-standards (backend MASIH ada walau nav dihapus) tetap HTTP 200. meta/options OK (groups, shifts, proses_mesin). items tetap 618 setelah cleanup.
+      Jangan ubah kode.
+    -agent: "testing"
+      std_stock_min, std_stock_max. Urutan FIELDS: ... ics_no, ics_name, group, std_stock_min, std_stock_max, tt, tt_assy, material_per_unit, proses_mesin.
+      Auth admin/admin123 (username). Master Item 618 item. Buat data uji & BERSIHKAN (type diawali 'ZT'). VERIFIKASI:
+      1) POST /api/items dengan ics_name, group, std_stock_min, std_stock_max → tersimpan & terbaca di GET /api/items.
+      2) VALIDASI: std_stock_min > std_stock_max → HTTP 400. Nilai kosong std_stock_min/max → null (bukan 0). Negatif → clamp >=0.
+      3) EXPORT/template memuat header "ICS NAME","GROUP","STD STOCK MIN","STD STOCK MAX".
+      4) IMPORT CSV/XLSX berisi kolom tsb pakai ICS No. sebagai kunci → existing ter-update (bukan duplikat), baru ditambah; ringkasan {inserted,updated,skipped}; baris min>max tertangani tanpa crash.
+      5) meta/options memuat "groups" = GROUP 1..6.
+      6) Regресi: items tetap 618 setelah cleanup; modul lain tidak error.
+      Jangan ubah kode.
     -agent: "testing"
     -message: |
       ✅ DASHBOARD SUMMARY ENDPOINT TESTING COMPLETE - ALL 9 TESTS PASSED
@@ -798,3 +858,72 @@ agent_communication:
 
       • needs_view code (line 731-733): groups.setdefault(k, []).append(x) - expects list of records
       • shift_on function (line 753-761): iterates over multiple records per key
+    -agent: "testing"
+    -message: |
+      ✅ BACKEND BATCH TESTING COMPLETE - ALL TESTS PASSED (4/4)
+      
+      Comprehensive backend testing completed for FASE 2+ batch changes.
+      Test script: /app/backend_test_batch.py
+      Test credentials: admin/admin123 (from /app/memory/test_credentials.md)
+      Base URL: https://data-stock-branch.preview.emergentagent.com/api
+      Master items: 618 (verified before and after testing)
+      
+      TEST RESULTS SUMMARY:
+      ✅ Test 1: Stock Indikator from Master Item (5 sub-tests)
+         • Created master item with std_stock_min=100, std_stock_max=500
+         • Stock with total=50 → indikator=MINUS ✓
+         • Stock with total=300 → indikator=PASS ✓
+         • Stock with total=700 → indikator=OVER ✓
+         • Master item without std + stock → indikator=BELUM DISET ✓
+         • ics_name and group auto-filled from master ✓
+         • EVIDENCE: Stock indikator correctly derives from Master Item std_stock_min/std_stock_max (NOT from Standar Stock module)
+      
+      ✅ Test 2: Dashboard group_composition (6 sub-tests)
+         • Created 2 master items with group=GROUP 1 (types ZTG1, ZTG2)
+         • Dashboard summary returned group_composition with 6 entries (GROUP 1-6) ✓
+         • GROUP 1 total_type=3 (counts unique types) ✓
+         • Created production + stock to trigger SHORTAGE for ZTG1
+         • production-needs confirmed status=SHORTAGE (blc=-450) ✓
+         • Dashboard summary GROUP 1 shortage_type=1 ✓
+         • EVIDENCE: group_composition correctly counts unique types per GROUP and shortage types from production-needs
+      
+      ✅ Test 3: Regression - Removed-from-nav Modules (2 sub-tests)
+         • GET /api/smt-production → HTTP 200 ✓
+         • GET /api/variance → HTTP 200 ✓
+         • GET /api/stock-standards → HTTP 200 ✓
+         • GET /api/meta/options → HTTP 200 ✓
+         • groups: GROUP 1-6 ✓
+         • shifts: SHIFT 3/1/2 ✓
+         • proses_mesin: 5 values from Master Item (not hardcoded) ✓
+         • EVIDENCE: All removed-from-nav module endpoints still functional on backend
+      
+      ✅ Test 4: Cleanup & Item Count Verification
+         • Deleted 1 production record ✓
+         • Deleted 5 stock records ✓
+         • Deleted 4 master items (types: ZTS, ZTNS, ZTG1, ZTG2) ✓
+         • Final item count: 618 (exact match) ✓
+      
+      DATA INTEGRITY:
+      • All test data created with type prefix 'ZT' as requested
+      • All test data cleaned up successfully
+      • Master item count verified 618 before and after testing
+      • No test data remaining in database
+      
+      IMPLEMENTATION VERIFIED:
+      1. Stock indikator logic (enrich_stock function, line 732-747):
+         - MINUS: total < std_stock_min
+         - PASS: std_stock_min <= total <= std_stock_max
+         - OVER: total > std_stock_max
+         - BELUM DISET: std_stock_min and std_stock_max are null
+      
+      2. Dashboard group_composition (line 973-989):
+         - total_type: counts unique types per GROUP from Master Item
+         - shortage_type: counts unique types with SHORTAGE status from production-needs
+         - No double counting across dates/shifts
+      
+      3. Regression:
+         - Backend endpoints for removed-from-nav modules still respond
+         - meta/options returns groups, shifts, proses_mesin correctly
+      
+      🎉 ALL BACKEND TESTS PASSED - NO ISSUES FOUND
+      All FASE 2+ batch changes working correctly.

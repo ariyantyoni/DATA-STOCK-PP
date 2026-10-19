@@ -23,7 +23,7 @@ export default function ProductionNeeds() {
     { key: "shift2", label: "Kondisi SHIFT 2", type: "status" },
   ];
   return (
-    <CrudPage title="Kebutuhan Assy VS. Stock Part"
+    <CrudPage title="Kebutuhan Assy VS. Stock Part Production"
       subtitle="Kondisi Produksi per SHIFT otomatis dari Produksi Part & ASSY (SHIFT 3 = ada PLAN apa pun; SHIFT 1 & 2 = ada PLAN INJECTION) · dicocokkan per Tanggal + ICS No. + Type · Waktu Shortage (jam) = Stock ÷ Material/Unit × T/T Assy ÷ 3600"
       icon={ClipboardList} endpoint="/production-needs" dataset="production-needs" module="production_needs" readOnly hideAudit
       columns={columns} formFields={[]} note="Indikator KONDISI PRODUKSI membaca keberadaan PLAN produksi per shift pada module Produksi Part & ASSY secara real-time"

@@ -263,6 +263,8 @@ FIELDS = {
         ("assy3", "Assy Shift 3", True), ("actual_total_stock", "Actual Total Stock", True),
         ("reason", "Keterangan", False)],
     "items": [("lane", "Lane", False), ("product", "Product", False), ("type", "Type", False), ("ics_no", "ICS No.", False),
+              ("ics_name", "ICS NAME", False), ("group", "GROUP", False),
+              ("std_stock_min", "STD STOCK MIN", True), ("std_stock_max", "STD STOCK MAX", True),
               ("tt", "T/T (detik)", True), ("tt_assy", "T/T Assy (detik/unit)", True), ("material_per_unit", "Kebutuhan Material per Unit Assy", True),
               ("proses_mesin", "PROSES MESIN", False)],
     "stock_standards": [("lane", "Lane", False), ("product", "Product", False), ("type", "Type", False), ("standard_stock", "Standart Stock", True)],
@@ -341,6 +343,13 @@ def normalize(module: str, body: dict) -> dict:
         d["ics_no"] = d["ics_no"].zfill(10)
     if module == "items":
         d["material_per_unit"] = num(body.get("material_per_unit"), 1.0) or 1.0
+        for f in ("std_stock_min", "std_stock_max"):
+            raw = body.get(f)
+            d[f] = None if raw in (None, "", "-") else max(0.0, num(raw))
+        if d.get("std_stock_min") is not None and d.get("std_stock_max") is not None and d["std_stock_min"] > d["std_stock_max"]:
+            raise HTTPException(400, "STD STOCK MIN tidak boleh lebih besar dari STD STOCK MAX")
+        d["group"] = str(body.get("group") or "").strip()
+        d["ics_name"] = str(body.get("ics_name") or "").strip()
     if module in ("smt_stock", "smt_production") and d.get("shift") not in SHIFTS:
         d["shift"] = d.get("shift") or ""
     if module == "variance":
@@ -679,7 +688,7 @@ async def link_stock_prev(docs: list) -> list:
 # ---------------------------------------------------------------------------
 async def product_map() -> dict:
     m = {}
-    for it in await db.items.find({}, {"ics_no": 1, "type": 1, "product": 1, "tt_assy": 1, "material_per_unit": 1, "proses_mesin": 1}).to_list(10000):
+    for it in await db.items.find({}, {"ics_no": 1, "type": 1, "product": 1, "tt_assy": 1, "material_per_unit": 1, "proses_mesin": 1, "ics_name": 1, "group": 1, "std_stock_min": 1, "std_stock_max": 1}).to_list(10000):
         m[(it.get("ics_no"), it.get("type"))] = it
         m.setdefault((it.get("ics_no"), None), it)
     return m
@@ -694,6 +703,10 @@ def fill_product(doc: dict, pm: dict) -> dict:
     if not doc.get("product"):
         doc["product"] = it.get("product") or ""
     doc["proses_mesin"] = it.get("proses_mesin") or ""
+    doc["ics_name"] = it.get("ics_name") or ""
+    doc["group"] = it.get("group") or ""
+    doc["std_stock_min"] = it.get("std_stock_min")
+    doc["std_stock_max"] = it.get("std_stock_max")
     return doc
 
 
@@ -717,12 +730,20 @@ def indikator(total, std):
 
 
 async def enrich_stock(docs: list) -> list:
-    pm, sm = await product_map(), await standards_map()
+    pm = await product_map()
     for d in docs:
         fill_product(d, pm)
-        std = sm.get((d.get("lane"), d.get("product"), d.get("type")))
-        d["standard_stock"] = std
-        d["indikator"] = indikator(num(d.get("total")), std)
+        mn, mx = d.get("std_stock_min"), d.get("std_stock_max")
+        d["standard_stock"] = mx
+        total = num(d.get("total"))
+        if mn is None and mx is None:
+            d["indikator"] = "BELUM DISET"
+        elif mx is not None and total > mx:
+            d["indikator"] = "OVER"
+        elif mn is not None and total < mn:
+            d["indikator"] = "MINUS"
+        else:
+            d["indikator"] = "PASS"
     return docs
 
 
@@ -856,6 +877,7 @@ async def meta_options(user: dict = Depends(get_current_user)):
     return {"lanes": sorted(lanes), "types": sorted(types), "ics_nos": sorted(ics),
             "products": sorted({x for x in await db.items.distinct("product") if x} | {x for x in await db.smt_production.distinct("product") if x}),
             "proses_mesin": sorted({x for x in await db.items.distinct("proses_mesin") if x}),
+            "groups": [f"GROUP {i}" for i in range(1, 7)],
             "shifts": SHIFTS,
             "stock_status": ["OK", "KOSONG"],
             "indikator": ["PASS", "MINUS", "OVER", "BELUM DISET"],
@@ -948,6 +970,24 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
     stock_breakdown = [{"name": f"Group {i}", "value": sum(num(x.get(f"group{i}")) for x in stock)} for i in range(1, 7)]
     stock_breakdown.append({"name": "Part Ragu-ragu", "value": sum(num(x.get("part_ragu")) for x in stock)})
 
+    # Komposisi Stock per GROUP: total type unik (Master Item) & shortage type (status SHORTAGE di Kebutuhan)
+    items_all = await db.items.find({}, {"type": 1, "group": 1, "ics_no": 1}).to_list(20000)
+    grp_total = {f"GROUP {i}": set() for i in range(1, 7)}
+    type_group = {}
+    for it in items_all:
+        g = (it.get("group") or "").strip()
+        type_group[(it.get("ics_no"), it.get("type"))] = g
+        if g in grp_total:
+            grp_total[g].add(it.get("type"))
+    grp_short = {f"GROUP {i}": set() for i in range(1, 7)}
+    for n in needs:
+        if n.get("status") == "SHORTAGE":
+            g = type_group.get((n.get("ics_no"), n.get("type")), "")
+            if g in grp_short:
+                grp_short[g].add(n.get("type"))
+    group_composition = [{"group": f"GROUP {i}", "total_type": len(grp_total[f"GROUP {i}"]),
+                          "shortage_type": len(grp_short[f"GROUP {i}"])} for i in range(1, 7)]
+
     part_trend = trend(smt, {"plan": "plan_part", "actual": "total_act_part", "plan_assy": "plan_assy", "actual_assy": "total_act_assy"})
     for e in part_trend:
         e["pct"] = round(e["actual"] / e["plan"] * 100, 1) if e.get("plan") else 0.0
@@ -973,6 +1013,7 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
             "achievement": {"gt97": cat_summary(cat["gt97"]), "mid": cat_summary(cat["mid"]), "lt90": cat_summary(cat["lt90"])},
         },
         "stock_breakdown": stock_breakdown,
+        "group_composition": group_composition,
         "smt_trend": part_trend,
         "smt_by_lane": sorted(by_lane.values(), key=lambda r: r["lane"]),
         "top_shortage": sorted(shortage_items, key=lambda n: n["blc"])[:6],

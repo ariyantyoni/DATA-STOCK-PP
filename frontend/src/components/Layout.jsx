@@ -12,12 +12,9 @@ import NotificationBell from "@/components/NotificationBell";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/smt-production", label: "Produksi Part & ASSY", icon: Cpu, module: "smt_production" },
-  { to: "/smt-stock", label: "Stock Part", icon: Boxes, module: "smt_stock" },
-  { to: "/production-needs", label: "Kebutuhan Assy VS. Stock Part", icon: ClipboardList, module: "production_needs" },
-  { to: "/variance", label: "Variance Stock", icon: Scale, module: "variance" },
+  { to: "/smt-stock", label: "Stock Part Production", icon: Boxes, module: "smt_stock" },
+  { to: "/production-needs", label: "Kebutuhan Assy VS. Stock Part Production", icon: ClipboardList, module: "production_needs" },
   { to: "/items", label: "Master Item", icon: Package, module: "items" },
-  { to: "/stock-standards", label: "Standar Stock", icon: Gauge, module: "stock_standards" },
   { to: "/audit", label: "Audit Trail", icon: ScrollText, module: "audit" },
   { to: "/backup", label: "Backup & Restore", icon: DatabaseBackup, module: "backup" },
   { to: "/users", label: "Manajemen User", icon: UsersIcon, module: "users" },

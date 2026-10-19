@@ -7,13 +7,10 @@ import Layout from "@/components/Layout";
 import AuditTrail from "@/pages/AuditTrail";
 import Notifications from "@/pages/Notifications";
 import Backup from "@/pages/Backup";
-import StockStandards from "@/pages/StockStandards";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
-import SMTProduction from "@/pages/SMTProduction";
 import SMTStock from "@/pages/SMTStock";
 import ProductionNeeds from "@/pages/ProductionNeeds";
-import Variance from "@/pages/Variance";
 import Users from "@/pages/Users";
 import MasterItems from "@/pages/MasterItems";
 import { Loader2 } from "lucide-react";
@@ -59,12 +56,9 @@ function App() {
               }
             >
               <Route index element={<Dashboard />} />
-              <Route path="smt-production" element={<Guard module="smt_production"><SMTProduction /></Guard>} />
               <Route path="smt-stock" element={<Guard module="smt_stock"><SMTStock /></Guard>} />
               <Route path="production-needs" element={<Guard module="production_needs"><ProductionNeeds /></Guard>} />
-              <Route path="variance" element={<Guard module="variance"><Variance /></Guard>} />
               <Route path="items" element={<Guard module="items"><MasterItems /></Guard>} />
-              <Route path="stock-standards" element={<Guard module="stock_standards"><StockStandards /></Guard>} />
               <Route path="audit" element={<Guard module="audit"><AuditTrail /></Guard>} />
               <Route path="backup" element={<Guard module="backup"><Backup /></Guard>} />
               <Route path="notifications" element={<Notifications />} />

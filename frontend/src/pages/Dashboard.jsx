@@ -27,13 +27,13 @@ function TooltipBox({ active, payload, label }) {
 function MetricCard({ title, cols, testId }) {
   return (
     <div data-testid={testId} className="rounded-xl border border-border bg-card/70 p-5 hover:border-primary/30 transition-colors">
-      <p className="text-xs font-mono-data uppercase tracking-wider text-muted-foreground mb-4 font-semibold">{title}</p>
+      <p className="text-sm font-mono-data uppercase tracking-wider text-muted-foreground mb-4 font-bold">{title}</p>
       <div className="flex items-start justify-between gap-2">
         {cols.map((c) => (
           <div key={c.label} className="flex-1 text-center">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1 leading-tight">{c.label}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 leading-tight">{c.label}</p>
             <p className={cn("font-heading text-3xl sm:text-4xl font-bold tracking-tight tabular-nums", c.accent || "text-foreground")}>{c.value}</p>
-            {c.unit && <p className="text-[10px] font-mono-data text-muted-foreground mt-0.5">{c.unit}</p>}
+            {c.unit && <p className="text-[11px] font-mono-data text-muted-foreground mt-1">{c.unit}</p>}
           </div>
         ))}
       </div>
@@ -171,10 +171,11 @@ export default function Dashboard() {
               <CartesianGrid strokeDasharray="3 3" stroke="var(--grid)" />
               <XAxis dataKey="date" tick={axis} tickFormatter={(d) => d?.slice(5)} />
               <YAxis yAxisId="left" tick={axis} label={{ value: "Pcs", angle: -90, position: "insideLeft", fill: "var(--axis)", fontSize: 11 }} />
-              <YAxis yAxisId="right" orientation="right" tick={axis} domain={[0, 120]} tickFormatter={(v) => `${v}%`} />
+              <YAxis yAxisId="right" orientation="right" tick={axis} domain={[0, 130]} ticks={[0, 25, 50, 75, 100, 130]} tickFormatter={(v) => `${v}%`} />
               <Tooltip content={<TooltipBox />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <ReferenceLine yAxisId="right" y={100} stroke="#ef4444" strokeDasharray="5 4" />
+              <ReferenceLine yAxisId="right" y={100} stroke="#ef4444" strokeDasharray="6 4" strokeWidth={1.5}
+                label={{ value: "TARGET 100%", position: "insideTopRight", fill: "#ef4444", fontSize: 11, fontWeight: 700 }} />
               <Bar yAxisId="left" dataKey="plan" name="PLAN" fill="#84cc16" radius={[2, 2, 0, 0]} />
               <Bar yAxisId="left" dataKey="actual" name="ACTUAL" fill="#f97316" radius={[2, 2, 0, 0]} />
               <Line yAxisId="right" type="monotone" dataKey="pct" name="%" stroke="#38bdf8" strokeWidth={2.5} dot={{ r: 2 }} />
@@ -182,78 +183,48 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </Panel>
 
-        <Panel icon={Boxes} title="Komposisi Stock Part">
-          <ResponsiveContainer width="100%" height={220}>
-            <PieChart>
-              <Pie data={data.stock_breakdown} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3}>
-                {data.stock_breakdown.map((s, i) => <Cell key={s.name} fill={STOCK_COLORS[i]} />)}
-              </Pie>
-              <Tooltip content={<TooltipBox />} />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="space-y-1.5 mt-2">
-            {data.stock_breakdown.map((s, i) => (
-              <div key={s.name} className="flex items-center justify-between text-sm">
-                <span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-full" style={{ background: STOCK_COLORS[i] }} />{s.name}</span>
-                <span className="font-mono-data">{fmtNum(s.value)}</span>
-              </div>
-            ))}
+        <Panel icon={Boxes} title="Komposisi Stock Part (per Group)">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-muted-foreground">
+                  <th className="text-left py-2 font-semibold uppercase text-xs tracking-wide">Group</th>
+                  <th className="text-right py-2 font-semibold uppercase text-xs tracking-wide">Total Type</th>
+                  <th className="text-right py-2 font-semibold uppercase text-xs tracking-wide">Shortage Type</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data.group_composition || []).map((g) => (
+                  <tr key={g.group} className="border-b border-border/40">
+                    <td className="py-2.5 font-semibold text-foreground">{g.group}</td>
+                    <td className="py-2.5 text-right font-mono-data tabular-nums">{fmtNum(g.total_type)}</td>
+                    <td className={cn("py-2.5 text-right font-mono-data tabular-nums font-bold", g.shortage_type > 0 ? "text-red-500" : "text-emerald-500")}>{fmtNum(g.shortage_type)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </Panel>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Panel icon={Cpu} title="Hasil Part per Lane (Injection / EVA / Assy)" tone="text-cyan-600" className="lg:col-span-2">
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={data.smt_by_lane}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--grid)" />
-              <XAxis dataKey="lane" tick={axis} />
-              <YAxis tick={axis} />
-              <Tooltip content={<TooltipBox />} cursor={{ fill: "var(--grid)" }} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="injection" name="Injection" stackId="a" fill="#0369a1" />
-              <Bar dataKey="eva" name="EVA" stackId="a" fill="#38bdf8" />
-              <Bar dataKey="assy" name="Assy" stackId="a" fill="#f97316" radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+      <div className="grid grid-cols-1 gap-4">
+        <Panel icon={AlertTriangle} title="Top Shortage (BLC)" tone="text-red-600">
+          {data.top_shortage.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">Tidak ada item shortage</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+              {data.top_shortage.map((n) => (
+                <div key={n.id} className="flex items-center justify-between border-b border-border/50 py-2">
+                  <div>
+                    <p className="text-sm text-foreground font-medium">{n.type}</p>
+                    <p className="text-[11px] font-mono-data text-muted-foreground">{n.ics_no} · Plan {fmtNum(n.plan_assy)} · Stock {fmtNum(n.stock_ok_today)}</p>
+                  </div>
+                  <span className="font-mono-data text-sm text-red-600 font-bold">{fmtNum(n.blc)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </Panel>
-
-        <div className="space-y-4">
-          <Panel icon={AlertTriangle} title="Top Shortage (BLC)" tone="text-red-600">
-            {data.top_shortage.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">Tidak ada item shortage</p>
-            ) : (
-              <div className="space-y-2">
-                {data.top_shortage.map((n) => (
-                  <div key={n.id} className="flex items-center justify-between border-b border-border/50 pb-1.5">
-                    <div>
-                      <p className="text-sm text-foreground">{n.type}</p>
-                      <p className="text-[11px] font-mono-data text-muted-foreground">{n.ics_no} · Plan {fmtNum(n.plan_assy)} · Stock {fmtNum(n.stock_ok_prev)}</p>
-                    </div>
-                    <span className="font-mono-data text-sm text-red-600">{fmtNum(n.blc)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Panel>
-          <Panel icon={Scale} title="Top Variance" tone="text-amber-600">
-            {data.top_variance.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">Tidak ada variance</p>
-            ) : (
-              <div className="space-y-2">
-                {data.top_variance.map((v) => (
-                  <div key={v.id} className="flex items-center justify-between border-b border-border/50 pb-1.5">
-                    <div>
-                      <p className="text-sm text-foreground">{v.type}</p>
-                      <p className="text-[11px] font-mono-data text-muted-foreground">{v.ics_no} · Sistem {fmtNum(v.stock_sistem)} · Actual {fmtNum(v.actual_total_stock)}</p>
-                    </div>
-                    <span className={cn("font-mono-data text-sm", v.variance < 0 ? "text-red-600" : "text-emerald-600")}>{v.variance > 0 ? "+" : ""}{fmtNum(v.variance)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Panel>
-        </div>
       </div>
     </div>
   );
