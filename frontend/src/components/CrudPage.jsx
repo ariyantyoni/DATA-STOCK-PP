@@ -121,8 +121,8 @@ export default function CrudPage({
 
   const gridColumns = useMemo(() => allColumns.map((c) => ({
     key: c.key, label: c.label.toUpperCase(), width: c.width || 110, align: c.align, sum: c.sum,
-    ...(c.inline ? { edit: "int", headerClass: "bg-emerald-100 dark:bg-emerald-500/20" } : { render: (row) => renderCell(c, row) }),
-  })), [allColumns]); // eslint-disable-line react-hooks/exhaustive-deps
+    ...(c.inline ? { edit: "int", headerClass: writable ? "bg-emerald-100 dark:bg-emerald-500/20" : undefined } : { render: (row) => renderCell(c, row) }),
+  })), [allColumns, writable]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onCellSave = useCallback(async (row, field, value) => {
     const { data } = await api.patch(`${endpoint}/${row.id}/cell`, { field, value });

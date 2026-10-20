@@ -2,7 +2,7 @@ import CrudPage from "@/components/CrudPage";
 import { useMetaOptions } from "@/hooks/useMetaOptions";
 import { Boxes } from "lucide-react";
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
 const SHIFTS = ["SHIFT 3", "SHIFT 1", "SHIFT 2"];
 
 const COLUMNS = [

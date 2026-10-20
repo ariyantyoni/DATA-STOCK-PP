@@ -1,4 +1,5 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { Loader2, CheckCircle2, AlertTriangle, RotateCcw } from "lucide-react";
 import { fmtNum, formatApiErrorDetail } from "@/lib/api";
@@ -22,20 +23,31 @@ function IntEditor({ value, h }) {
   );
 }
 
-function SelectEditor({ value, options, h }) {
+function SelectEditor({ value, options, h, anchor }) {
   const ref = useRef(null);
-  useEffect(() => { ref.current?.focus({ preventScroll: true }); }, []);
-  return (
+  const [pos, setPos] = useState(null);
+  useLayoutEffect(() => {
+    const td = document.querySelector(`[data-cell="${anchor}"]`);
+    if (!td) return;
+    const r = td.getBoundingClientRect();
+    const menuH = (options.length + 1) * 26 + 10;
+    const up = r.bottom + menuH > window.innerHeight - 8;
+    setPos({ left: r.left, width: r.width, top: up ? r.top - menuH - 2 : r.bottom + 2 });
+  }, [anchor, options.length]);
+  useEffect(() => { if (pos) ref.current?.focus({ preventScroll: true }); }, [pos]);
+  return createPortal(
     <div ref={ref} tabIndex={0} onKeyDown={h.editKey} onBlur={h.blur} data-testid="grid-select-editor"
-      className="absolute left-0 top-full z-40 mt-0.5 min-w-full rounded-md border border-border bg-popover shadow-lg py-1 outline-none">
+      style={pos ? { position: "fixed", left: pos.left, top: pos.top, minWidth: pos.width } : { position: "fixed", visibility: "hidden" }}
+      className="z-[100] rounded-md border border-border bg-popover shadow-lg py-1 outline-none">
       {[...options, ""].map((o) => (
         <div key={o || "empty"} data-testid={`grid-select-option-${o || "kosong"}`}
           onMouseDown={(e) => e.preventDefault()} onClick={() => h.pick(o)}
-          className={cn("px-3 py-1 text-xs font-mono-data cursor-pointer", value === o ? "bg-emerald-600 text-white" : "hover:bg-secondary")}>
+          className={cn("px-3 h-[26px] leading-[26px] text-xs font-mono-data cursor-pointer", value === o ? "bg-emerald-600 text-white" : "hover:bg-secondary")}>
           {o || "(kosong)"}
         </div>
       ))}
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -68,7 +80,7 @@ const GridRow = memo(function GridRow({ row, ri, columns, activeC, editing, rowS
               st === "error" && "!bg-red-50 dark:!bg-red-500/15 text-red-700 dark:text-red-400",
               activeC === ci && "outline outline-2 -outline-offset-2 outline-emerald-600 z-[3]")}>
             {isEdit && c.edit === "int" ? <IntEditor value={editing.value} h={h} /> : cellContent(c, row, rowPending)}
-            {isEdit && c.edit === "select" && <SelectEditor value={editing.value} options={c.options} h={h} />}
+            {isEdit && c.edit === "select" && <SelectEditor value={editing.value} options={c.options} h={h} anchor={`${ri}-${ci}`} />}
             {st === "saving" && <Loader2 className="absolute left-0.5 top-0.5 w-3 h-3 animate-spin text-emerald-600" />}
             {st === "error" && <AlertTriangle className="absolute left-0.5 top-0.5 w-3 h-3 text-red-600" />}
           </td>
@@ -261,6 +273,11 @@ export default function ExcelGrid({ columns, rows, rowKey, onSave, editable = fa
     }
   };
 
+  const onScroll = () => {
+    const ed = S.current.editing;
+    if (ed && S.current.columns[ed.c]?.edit === "select") { S.current.editing = null; setEditing(null); }
+  };
+
   useEffect(() => {
     if (!active) return;
     wrapRef.current?.querySelector(`[data-cell="${active.r}-${active.c}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -281,7 +298,7 @@ export default function ExcelGrid({ columns, rows, rowKey, onSave, editable = fa
 
   return (
     <div className="rounded-lg border border-border bg-card overflow-hidden" data-testid={testId}>
-      <div ref={wrapRef} tabIndex={0} onKeyDown={onKeyDown} data-testid={`${testId}-scroll`}
+      <div ref={wrapRef} tabIndex={0} onKeyDown={onKeyDown} onScroll={onScroll} data-testid={`${testId}-scroll`}
         className="overflow-auto max-h-[68vh] outline-none focus-visible:ring-2 focus-visible:ring-emerald-600/40">
         <table className="border-collapse text-[12px]" style={{ tableLayout: "fixed", width: 44 + columns.reduce((a, c) => a + (c.width || 100), 0) + (renderActions ? 90 : 0) }}>
           <colgroup>

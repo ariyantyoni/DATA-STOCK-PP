@@ -16,6 +16,7 @@ from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 import logging
 import io
+import re
 import json
 import zipfile
 import jwt
@@ -962,7 +963,9 @@ def parse_int_cell(v):
             raise HTTPException(400, "Nilai harus berupa angka bulat (tanpa desimal)")
         v = int(v)
     else:
-        s = str(v).strip().replace(".", "")
+        s = str(v).strip()
+        if re.fullmatch(r"\d{1,3}(\.\d{3})+", s):
+            s = s.replace(".", "")
         if not s.isdigit():
             raise HTTPException(400, "Nilai harus berupa angka bulat positif")
         v = int(s)
@@ -1579,6 +1582,7 @@ async def startup():
     await db.users.create_index("username", unique=True, sparse=True)
     await db.audit_log.create_index([("ts", -1)])
     await db.needs_entries.create_index([("date", 1), ("ics_no", 1), ("type", 1)], unique=True)
+    await db.smt_stock.create_index([("date", 1), ("shift", 1)])
     await db.notifications.create_index([("user_id", 1), ("read", 1), ("ts", -1)])
     await seed_admin()
     await seed_demo_users()

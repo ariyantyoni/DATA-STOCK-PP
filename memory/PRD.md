@@ -55,8 +55,19 @@ Aplikasi web profesional untuk Control Data Stock & Production di perusahaan man
 - (2026-09-24) Stock SMT: kolom KONDISI PRODUKSI (paling kanan setelah Status, tertaut ke Planing SMT produksi tanggal+ICS+Type); Kebutuhan: Kondisi Produksi dipindah ke kanan Waktu Shortage, Stock OK Hari Ini = 0 bila belum ada stock; kolom TRAY dihapus dari Master Item & Stock SMT (field & template); items tanpa material_per_unit diisi default 1.
 - (2026-09-24) Kebutuhan: urutan kolom setelah Material/Unit → Status, Waktu Shortage, Kondisi Produksi.
 
+
+## Implemented (2026-06) — Kebutuhan format Excel + input ala Excel
+- Kebutuhan Assy VS. Stock Part Production = grid 27 kolom sesuai FORMAT Excel (TANGGAL…STATUS MESIN S2) + baris header grup, header sticky, scroll horizontal, filter Product/Lane/Proses/Group/Status Part, pencarian, ringkasan status, Export CSV.
+- Baris = semua Master Item (ics_no+type) per tanggal; input disimpan di koleksi `needs_entries` (unik date+ics_no+type; ikut backup/restore). Data koleksi production_needs lama tetap aman.
+- Rumus: BALANCE = (ACT STOCK − PLAN CUSTOMER) + ACTUAL S3+S1+S2; LEVEL STOCK = ACT STOCK ÷ STD MAX; BALANCE Sx = ACTUAL − PLAN; STATUS PART ≤0 SHORTAGE, ≤MID POTENSI, >MID TIDAK (MID=(MIN+MAX)/2), "STD BELUM DISET" bila std kosong. ACT STOCK JAM 01:00 = TOTAL smt_stock SHIFT 3 tanggal sama (null → "-").
+- STATUS MESIN S3/S1/S2 dropdown ON/OFF/DANDORI per shift; traceability field_updated_by/at + audit log.
+- Komponen ExcelGrid (Enter/Tab/Panah/Esc/F2/Delete, auto-save per cell, indikator Menyimpan/Tersimpan/Gagal + Coba lagi). Dipakai juga di Stock Part Production (GROUP 1–6, PART RAGU-RAGU) via CrudPage `inlineEdit`.
+- Endpoint: GET /api/needs-grid?date, PATCH /api/needs-grid/cell, PATCH /api/smt-stock/{id}/cell (angka bulat ≥0, role read → 403).
+- Teruji iteration_8 (backend 45/45 setelah fix, frontend e2e lulus).
+
 ## Backlog / Remaining
-- P1: (kosong)
+- P1: Dashboard (KPI shortage & komposisi group) masih memakai logika Kebutuhan lama — selaraskan ke STATUS PART baru bila user setuju.
+- P1: Import Excel untuk grid Kebutuhan (PLAN CUSTOMER/PLAN/ACTUAL).
 - P2: Export Excel dengan layout asli DATA STOCK; brute-force lockout; password reset; split server.py.
 
 ## Next Tasks
