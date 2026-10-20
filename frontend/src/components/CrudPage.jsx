@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import api, { canWrite, fmtNum, fmtPct, formatApiErrorDetail } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
@@ -11,12 +11,13 @@ import FilterBar from "@/components/FilterBar";
 import RecordDialog from "@/components/RecordDialog";
 import ImportDialog from "@/components/ImportDialog";
 import { StatusBadge } from "@/components/StatusBadge";
+import ExcelGrid from "@/components/ExcelGrid";
 import { Plus, Upload, Pencil, Trash2, Loader2, Download, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function CrudPage({
   title, subtitle, icon: Icon, endpoint, dataset, module,
-  columns, formFields, filters, options, refreshOptions, itemPicker = true, readOnly = false, hideAudit = false, note,
+  columns, formFields, filters, options, refreshOptions, itemPicker = true, readOnly = false, hideAudit = false, note, inlineEdit = false,
 }) {
   const { user } = useAuth();
   const writable = !readOnly && canWrite(user, module);
@@ -34,7 +35,7 @@ export default function CrudPage({
     { key: "created_by_name", label: "Diinput oleh" },
     { key: "created_at", label: "Waktu Input", type: "datetime" },
   ];
-  const allColumns = hideAudit ? columns : [...columns, ...AUDIT_COLS];
+  const allColumns = useMemo(() => (hideAudit ? columns : [...columns, ...AUDIT_COLS]), [columns, hideAudit]); // eslint-disable-line react-hooks/exhaustive-deps
   const sumCols = allColumns.filter((c) => c.sum);
 
   const fetchData = useCallback(async () => {
@@ -118,6 +119,25 @@ export default function CrudPage({
     return <span>{v ?? "-"}</span>;
   };
 
+  const gridColumns = useMemo(() => allColumns.map((c) => ({
+    key: c.key, label: c.label.toUpperCase(), width: c.width || 110, align: c.align, sum: c.sum,
+    ...(c.inline ? { edit: "int", headerClass: "bg-emerald-100 dark:bg-emerald-500/20" } : { render: (row) => renderCell(c, row) }),
+  })), [allColumns]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const onCellSave = useCallback(async (row, field, value) => {
+    const { data } = await api.patch(`${endpoint}/${row.id}/cell`, { field, value });
+    setRows((rs) => rs.map((r) => (r.id === data.id ? data : r)));
+  }, [endpoint]);
+
+  const renderActions = useCallback((row, i) => (
+    <div className="inline-flex gap-1">
+      <button onClick={() => { setEditing(row); setDialogOpen(true); }} data-testid={`edit-${i}`}
+        className="w-6 h-6 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-primary"><Pencil className="w-3 h-3" /></button>
+      <button onClick={() => setDeleteId(row.id)} data-testid={`delete-${i}`}
+        className="w-6 h-6 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
+    </div>
+  ), []);
+
   return (
     <div className="space-y-6 fade-up">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -147,7 +167,15 @@ export default function CrudPage({
 
       <FilterBar filters={filters} values={values} setValues={setValues} options={options} />
 
-      <div className="rounded-lg border border-border bg-card/60 overflow-hidden">
+      {inlineEdit && (loading ? (
+        <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+      ) : (
+        <ExcelGrid testId="inline-grid" columns={gridColumns} rows={rows} rowKey={(r) => r.id} onSave={onCellSave} editable={writable}
+          renderActions={writable ? renderActions : undefined}
+          info={writable ? `Kolom hijau dapat diisi langsung · Enter simpan & turun · Tab simpan & ke kanan · Panah pindah · Esc batal${note ? ` · ${note}` : ""}` : note} />
+      ))}
+
+      {!inlineEdit && <div className="rounded-lg border border-border bg-card/60 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -200,7 +228,7 @@ export default function CrudPage({
         {!loading && rows.length > 0 && (
           <div className="px-4 py-2.5 border-t border-border text-xs font-mono-data text-muted-foreground">{rows.length} baris{note ? ` · ${note}` : ""}</div>
         )}
-      </div>
+      </div>}
 
       <RecordDialog open={dialogOpen} onOpenChange={setDialogOpen}
         title={editing ? `Edit ${title}` : `Tambah ${title}`} fields={formFields}

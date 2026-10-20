@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
@@ -863,6 +863,164 @@ async def variance_view(p: dict, product: Optional[str], proses: Optional[str] =
 
 
 # ---------------------------------------------------------------------------
+# Kebutuhan Assy VS. Stock Part Production — grid format Excel (input per cell)
+# ---------------------------------------------------------------------------
+NEEDS_INT_FIELDS = ["plan_customer", "plan_s3", "actual_s3", "plan_s1", "actual_s1", "plan_s2", "actual_s2"]
+NEEDS_MESIN_FIELDS = ["status_mesin_s3", "status_mesin_s1", "status_mesin_s2"]
+MESIN_OPTIONS = ["ON", "OFF", "DANDORI"]
+STOCK_INT_FIELDS = ["group1", "group2", "group3", "group4", "group5", "group6", "part_ragu"]
+
+
+def status_part(balance, mn, mx):
+    if balance is None:
+        return None
+    if balance <= 0:
+        return "SHORTAGE"
+    if mn is None or mx is None:
+        return "STD BELUM DISET"
+    return "POTENSI SHORTAGE" if balance <= (mn + mx) / 2 else "TIDAK SHORTAGE"
+
+
+def compute_needs_grid(r: dict) -> dict:
+    k = r.get("act_stock")
+    r["balance"] = None if k is None else r1(k - num(r.get("plan_customer")) + sum(num(r.get(f"actual_s{s}")) for s in (3, 1, 2)))
+    mx = r.get("std_stock_max")
+    r["level_stock"] = round(k / mx, 2) if k is not None and mx else None
+    for s in (3, 1, 2):
+        p, a = r.get(f"plan_s{s}"), r.get(f"actual_s{s}")
+        r[f"balance_s{s}"] = None if p is None and a is None else r1(num(a) - num(p))
+    r["status_part"] = status_part(r["balance"], r.get("std_stock_min"), mx)
+    return r
+
+
+async def shift3_stock_map(date: str) -> dict:
+    m = {}
+    docs = await db.smt_stock.find({"date": date, "shift": "SHIFT 3"}).sort("updated_at", 1).to_list(20000)
+    for s in docs:
+        m[(s.get("ics_no"), s.get("type"))] = num(s.get("total"))
+    return m
+
+
+def needs_row(date: str, it: Optional[dict], ent: Optional[dict], stk: dict, ics: str, typ: str) -> dict:
+    it = it or {}
+    ent = ent or {}
+    r = {"id": f"{ics}|{typ}", "date": date, "ics_no": ics, "type": typ, "master_found": bool(it)}
+    for f in ("lane", "product", "ics_name", "proses_mesin", "group"):
+        r[f] = it.get(f) or ""
+    r["std_stock_min"] = it.get("std_stock_min")
+    r["std_stock_max"] = it.get("std_stock_max")
+    r["act_stock"] = stk.get((ics, typ))
+    for f in NEEDS_INT_FIELDS + NEEDS_MESIN_FIELDS:
+        r[f] = ent.get(f)
+    r["updated_by_name"] = ent.get("updated_by_name")
+    r["updated_at"] = ent.get("updated_at")
+    return compute_needs_grid(r)
+
+
+def valid_date(date: str) -> str:
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except Exception:
+        raise HTTPException(400, "Format tanggal harus YYYY-MM-DD")
+    return date
+
+
+@api.get("/needs-grid")
+async def needs_grid(date: str, user: dict = Depends(require_perm("production_needs", "read"))):
+    valid_date(date)
+    items = await db.items.find({}).sort([("lane", 1), ("type", 1)]).to_list(20000)
+    ents = {(e.get("ics_no"), e.get("type")): e for e in await db.needs_entries.find({"date": date}).to_list(20000)}
+    stk = await shift3_stock_map(date)
+    out, seen = [], set()
+    for it in items:
+        key = (it.get("ics_no") or "", it.get("type") or "")
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(needs_row(date, it, ents.get(key), stk, *key))
+    for key, e in ents.items():
+        if key not in seen:
+            out.append(needs_row(date, None, e, stk, *key))
+    return out
+
+
+class CellBody(BaseModel):
+    field: str
+    value: Optional[Any] = None
+    date: Optional[str] = None
+    ics_no: Optional[str] = None
+    type: Optional[str] = None
+
+
+def parse_int_cell(v):
+    if v is None or (isinstance(v, str) and v.strip() == ""):
+        return None
+    if isinstance(v, bool):
+        raise HTTPException(400, "Nilai harus berupa angka bulat")
+    if isinstance(v, (int, float)):
+        if float(v) != int(v):
+            raise HTTPException(400, "Nilai harus berupa angka bulat (tanpa desimal)")
+        v = int(v)
+    else:
+        s = str(v).strip().replace(".", "")
+        if not s.isdigit():
+            raise HTTPException(400, "Nilai harus berupa angka bulat positif")
+        v = int(s)
+    if v < 0:
+        raise HTTPException(400, "Nilai tidak boleh negatif")
+    return v
+
+
+@api.patch("/needs-grid/cell")
+async def needs_grid_cell(body: CellBody, request: Request, user: dict = Depends(require_perm("production_needs", "write"))):
+    date = valid_date(body.date or "")
+    ics, typ = (body.ics_no or "").strip(), (body.type or "").strip()
+    if body.field in NEEDS_INT_FIELDS:
+        value = parse_int_cell(body.value)
+    elif body.field in NEEDS_MESIN_FIELDS:
+        value = None if body.value in (None, "") else str(body.value).upper()
+        if value is not None and value not in MESIN_OPTIONS:
+            raise HTTPException(400, "STATUS MESIN hanya boleh ON, OFF, atau DANDORI")
+    else:
+        raise HTTPException(400, f"Kolom {body.field} tidak dapat diedit")
+    key = {"date": date, "ics_no": ics, "type": typ}
+    it = await db.items.find_one({"ics_no": ics, "type": typ})
+    existing = await db.needs_entries.find_one(key)
+    if not it and not existing:
+        raise HTTPException(404, "Data Master Item belum tersedia untuk ICS NO / TYPE ini")
+    now = datetime.now(timezone.utc).isoformat()
+    sets = {body.field: value, "updated_at": now, "updated_by": user["id"], "updated_by_name": user["name"],
+            f"{body.field}_updated_at": now, f"{body.field}_updated_by": user["name"]}
+    res = await db.needs_entries.find_one_and_update(
+        key, {"$set": sets, "$setOnInsert": {**key, "created_at": now, "created_by": user["id"], "created_by_name": user["name"]}},
+        upsert=True, return_document=True)
+    await log_audit(request, user, "UPDATE", "production_needs", str(res["_id"]),
+                    {**key, body.field: (existing or {}).get(body.field)}, {**key, body.field: value},
+                    f"Input cell {body.field} · {ics} {typ} · {date}")
+    stk = await shift3_stock_map(date)
+    return needs_row(date, it, res, stk, ics, typ)
+
+
+@api.patch("/smt-stock/{rid}/cell")
+async def smt_stock_cell(rid: str, body: CellBody, request: Request, user: dict = Depends(require_perm("smt_stock", "write"))):
+    if body.field not in STOCK_INT_FIELDS:
+        raise HTTPException(400, f"Kolom {body.field} tidak dapat diedit")
+    value = parse_int_cell(body.value)
+    existing = await db.smt_stock.find_one({"_id": oid(rid)})
+    if not existing:
+        raise HTTPException(404, "Data tidak ditemukan")
+    d = compute_smt_stock({**existing, body.field: value})
+    sets = {body.field: value, "total": d["total"], "status": d["status"]}
+    stamp(sets, user, False)
+    await db.smt_stock.update_one({"_id": existing["_id"]}, {"$set": sets})
+    doc = clean(await db.smt_stock.find_one({"_id": existing["_id"]}))
+    ref = {k: existing.get(k, "") for k in ("date", "ics_no", "type", "shift")}
+    await log_audit(request, user, "UPDATE", "smt_stock", rid, {**ref, body.field: existing.get(body.field), "total": existing.get("total")},
+                    {**ref, body.field: value, "total": doc.get("total")}, f"Input cell {body.field}")
+    return (await enrich_stock([doc]))[0]
+
+
+# ---------------------------------------------------------------------------
 # META options
 # ---------------------------------------------------------------------------
 @api.get("/meta/options")
@@ -883,6 +1041,8 @@ async def meta_options(user: dict = Depends(get_current_user)):
             "indikator": ["PASS", "MINUS", "OVER", "BELUM DISET"],
             "lamp_status": ["SELESAI", "PROSES", "BELUM MULAI"],
             "needs_status": ["CUKUP", "PAS", "SHORTAGE", "BELUM DICEK"],
+            "status_part": ["SHORTAGE", "POTENSI SHORTAGE", "TIDAK SHORTAGE", "STD BELUM DISET"],
+            "status_mesin": MESIN_OPTIONS,
             "variance_status": ["OK", "VARIANCE +", "VARIANCE -", "BELUM DICEK"]}
 
 
@@ -1226,8 +1386,8 @@ async def read_notifications(body: ReadBody, user: dict = Depends(get_current_us
 # ---------------------------------------------------------------------------
 # BACKUP & RESTORE (.zip berisi JSON per modul)
 # ---------------------------------------------------------------------------
-BACKUP_COLLECTIONS = DATA_MODULES + ["users", "audit_log", "notifications"]
-RESTORE_COLLECTIONS = DATA_MODULES
+BACKUP_COLLECTIONS = DATA_MODULES + ["needs_entries", "users", "audit_log", "notifications"]
+RESTORE_COLLECTIONS = DATA_MODULES + ["needs_entries"]
 
 
 def to_jsonable(doc: dict) -> dict:
@@ -1418,6 +1578,7 @@ async def startup():
                                 partialFilterExpression={"email": {"$type": "string"}})
     await db.users.create_index("username", unique=True, sparse=True)
     await db.audit_log.create_index([("ts", -1)])
+    await db.needs_entries.create_index([("date", 1), ("ics_no", 1), ("type", 1)], unique=True)
     await db.notifications.create_index([("user_id", 1), ("read", 1), ("ts", -1)])
     await seed_admin()
     await seed_demo_users()
