@@ -62,12 +62,12 @@ export default function ImportDialog({ open, onOpenChange, dataset, title, onDon
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset(); }}>
-      <DialogContent className="max-w-3xl bg-card border-border max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl grid-cols-[minmax(0,1fr)] bg-card border-border max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-heading flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-primary" /> Import {title}
           </DialogTitle>
-          <DialogDescription className="text-muted-foreground">Unggah file Excel/CSV sesuai template (1 baris header), pratinjau data, lalu konfirmasi. Baris dengan Tanggal + ICS No. yang sama akan diperbarui.</DialogDescription>
+          <DialogDescription className="text-muted-foreground">Unggah file Excel/CSV sesuai template (1 baris header), pratinjau data, lalu konfirmasi. Data dengan kunci yang sama (Master Item: ICS No. + Type) akan diperbarui; kolom yang tidak ada di file tidak diubah.</DialogDescription>
         </DialogHeader>
         <button type="button" onClick={downloadTemplate} data-testid="import-template-button"
           className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline w-fit">
@@ -94,16 +94,17 @@ export default function ImportDialog({ open, onOpenChange, dataset, title, onDon
           <div className="space-y-3">
             <p className="text-xs font-mono-data text-muted-foreground">
               {file?.name} · {preview.total} baris terdeteksi · menampilkan {preview.rows.length}
-              {preview.invalid > 0 && <span className="text-red-600"> · {preview.invalid} baris tanpa Tanggal/ICS No. akan dilewati</span>}
+              {preview.invalid > 0 && <span className="text-red-600"> · {preview.invalid} baris tidak valid (kolom kunci kosong) akan dilewati</span>}
             </p>
             <div className="flex flex-wrap gap-2 text-xs font-mono-data" data-testid="import-summary">
               <span className="px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-600 border border-emerald-500/30">{preview.new} data baru</span>
               <span className={`px-2 py-1 rounded-md border ${preview.duplicates > 0 ? "bg-amber-500/10 text-amber-600 border-amber-500/30" : "bg-secondary text-muted-foreground border-border"}`}>{preview.duplicates} duplikat (akan diperbarui)</span>
               {preview.invalid > 0 && <span className="px-2 py-1 rounded-md bg-red-500/10 text-red-600 border border-red-500/30">{preview.invalid} dilewati</span>}
+              {preview.warnings > 0 && <span className="px-2 py-1 rounded-md bg-amber-500/10 text-amber-600 border border-amber-500/30" data-testid="import-preview-warnings">{preview.warnings} peringatan STD MIN &gt; MAX (tetap disimpan)</span>}
             </div>
             {preview.duplicates > 0 && (
               <p className="text-xs text-amber-600 bg-amber-500/10 border border-amber-500/30 rounded-md px-3 py-2" data-testid="import-duplicate-warning">
-                Peringatan: {preview.duplicates} data dengan Tanggal + ICS No + Type yang sama sudah ada. Konfirmasi akan memperbarui data tersebut (tercatat di Audit Trail). Klik "Pilih file lain" untuk membatalkan.
+                Peringatan: {preview.duplicates} data dengan kunci yang sama sudah ada. Konfirmasi akan memperbarui data tersebut (tercatat di Audit Trail). Klik "Pilih file lain" untuk membatalkan.
               </p>
             )}
             {preview.unknown_columns?.length > 0 && (

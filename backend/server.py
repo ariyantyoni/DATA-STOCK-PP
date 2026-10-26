@@ -351,9 +351,12 @@ def normalize(module: str, body: dict) -> dict:
         for f in ("std_stock_min", "std_stock_max"):
             raw = body.get(f)
             d[f] = None if raw in (None, "", "-") else max(0.0, num(raw))
-        if d.get("std_stock_min") is not None and d.get("std_stock_max") is not None and d["std_stock_min"] > d["std_stock_max"]:
-            raise HTTPException(400, "STD STOCK MIN tidak boleh lebih besar dari STD STOCK MAX")
-        d["group"] = str(body.get("group") or "").strip()
+        bad = d.get("std_stock_min") is not None and d.get("std_stock_max") is not None and d["std_stock_min"] > d["std_stock_max"]
+        d["std_warning"] = "STD MIN > MAX" if bad else ""
+        g = str(body.get("group") or "").strip()
+        if re.fullmatch(r"\d+(\.0+)?", g):
+            g = f"GROUP {int(float(g))}"
+        d["group"] = g.upper()
         d["ics_name"] = str(body.get("ics_name") or "").strip()
     if module in ("smt_stock", "smt_production") and d.get("shift") not in SHIFTS:
         d["shift"] = d.get("shift") or ""
@@ -1408,7 +1411,7 @@ def decode_text(b: bytes) -> str:
     return b.decode("utf-8", errors="replace")
 
 
-COMPUTED_KEYS = {"cap_h", "total", "status", "total_act_part", "total_act_assy", "plan_part", "achievement", "balance"}
+COMPUTED_KEYS = {"std_warning", "cap_h", "total", "status", "total_act_part", "total_act_assy", "plan_part", "achievement", "balance"}
 
 
 def parse_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:
@@ -1499,7 +1502,7 @@ async def import_preview(dataset: str, file: UploadFile = File(...), user: dict 
     no_date = DATASETS[dataset].get("no_date")
     duplicates = 0
     for r in rows:
-        if not r.get("ics_no") and not DATASETS[dataset].get("key"):
+        if not import_row_valid(dataset, r):
             continue
         ck = DATASETS[dataset].get("key")
         key = {k: r.get(k, "") for k in ck} if ck else ({"ics_no": r["ics_no"], "type": r["type"]} if no_date else {"date": r.get("date"), "ics_no": r["ics_no"], "type": r["type"]})
@@ -1508,8 +1511,9 @@ async def import_preview(dataset: str, file: UploadFile = File(...), user: dict 
         if await db[module].find_one(key):
             duplicates += 1; r["_duplicate"] = True
     columns = [k for k, _, _ in FIELDS[module]] + [k for k in rows[0].keys() if rows and k not in [f[0] for f in FIELDS[module]]] if rows else []
+    warnings = sum(1 for r in rows if r.get("std_warning"))
     return {"columns": columns, "rows": rows[:100], "total": len(rows), "invalid": invalid, "unknown_columns": unknown,
-            "duplicates": duplicates, "new": len(rows) - invalid - duplicates}
+            "duplicates": duplicates, "new": max(0, len(rows) - invalid - duplicates), "warnings": warnings}
 
 
 @api.post("/import/{dataset}/confirm")
@@ -1566,6 +1570,36 @@ async def import_confirm(dataset: str, request: Request, file: UploadFile = File
     if inserted or updated:
         await notify_users(user, module, f"Import {MODULES[module]}: {inserted} data baru, {updated} diperbarui oleh {user['name']} pada {fmt_ts(now)}. Silakan cek dashboard.")
     return {"inserted": inserted, "updated": updated, "skipped": skipped}
+
+
+class ExportBody(BaseModel):
+    filename: str
+    columns: list
+    rows: list
+
+
+@api.post("/export/xlsx")
+async def export_xlsx(body: ExportBody, user: dict = Depends(get_current_user)):
+    wb = Workbook(); ws = wb.active; ws.title = "data"
+    cols = [c for c in body.columns if isinstance(c, dict) and c.get("key")]
+    ws.append([c.get("label") or c["key"] for c in cols])
+    for r in body.rows:
+        line = []
+        for c in cols:
+            v = r.get(c["key"]) if isinstance(r, dict) else None
+            line.append("" if v is None else v)
+        ws.append(line)
+    for i, c in enumerate(cols, 1):
+        letter = ws.cell(1, i).column_letter
+        ws.column_dimensions[letter].width = max(10, len(str(c.get("label") or c["key"])) + 2)
+        if c.get("text"):
+            for cell in ws[letter][1:]:
+                cell.value = "" if cell.value in (None, "") else str(cell.value)
+                cell.number_format = "@"
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    name = re.sub(r"[^A-Za-z0-9_.-]", "_", body.filename or "export") + ".xlsx"
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 # ---------------------------------------------------------------------------

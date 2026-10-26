@@ -92,19 +92,22 @@ export default function CrudPage({
     }
   };
 
-  const exportCsv = () => {
-    const cols = columns.map((c) => c.key);
-    const header = columns.map((c) => c.label).join(",");
-    const body = rows.map((r) => cols.map((k) => `"${r[k] ?? ""}"`).join(",")).join("\n");
-    const blob = new Blob([`${header}\n${body}`], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `${dataset}.csv`; a.click();
-    URL.revokeObjectURL(url);
+  const exportCsv = async () => {
+    try {
+      const cols = columns.map((c) => ({ key: c.key, label: c.label, text: !!c.mono || c.key === "ics_no" || c.key === "date" }));
+      const res = await api.post("/export/xlsx", { filename: dataset || "export", columns: cols, rows }, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url; a.download = `${dataset || "export"}.xlsx`; a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Gagal export Excel");
+    }
   };
 
   const renderCell = (col, row) => {
     const v = row[col.key];
+    if (col.render) return col.render(row);
     if (col.type === "status") return <StatusBadge status={v} testId={`row-status-${row.id}`} />;
     if (v === null || v === undefined) return <span className="text-muted-foreground font-mono-data">{col.na || "-"}</span>;
     if (col.type === "hours") return <span className="font-mono-data">{fmtNum(v)} jam</span>;

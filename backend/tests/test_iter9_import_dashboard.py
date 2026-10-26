@@ -114,7 +114,7 @@ class TestItemImport:
         assert it["std_stock_min"] == 100 and it["std_stock_max"] == 300
         assert mongo.items.count_documents({"ics_no": ICS["M2"]}) == 1
 
-    def test_xls_with_invalid_std_row_only_that_row_fails(self, admin):
+    def test_xls_with_std_min_gt_max_saved_with_warning(self, admin):
         import xlwt
         wb = xlwt.Workbook(); ws = wb.add_sheet("s")
         hdr = ["Lane", "Product", "Type", "ICS No.", "STD STOCK MIN", "STD STOCK MAX"]
@@ -127,16 +127,16 @@ class TestItemImport:
         b = io.BytesIO(); wb.save(b); b = b.getvalue()
         p = upload(admin, f"{API}/import/items/preview", "items.xls", b)
         assert p.status_code == 200, p.text
-        assert p.json()["invalid"] == 1 and p.json()["total"] == 2, p.json()
+        assert p.json()["invalid"] == 0 and p.json()["warnings"] == 1 and p.json()["total"] == 2, p.json()
         c = upload(admin, f"{API}/import/items/confirm", "items.xls", b)
         assert c.status_code == 200, c.text
-        assert c.json()["updated"] == 1 and c.json()["skipped"] == 1, c.json()
+        assert c.json()["updated"] == 2 and c.json()["skipped"] == 0, c.json()
         m1 = mongo.items.find_one({"ics_no": ICS["M1"]}); m2 = mongo.items.find_one({"ics_no": ICS["M2"]})
-        assert m1["std_stock_min"] == 100 and m1["std_stock_max"] == 300
+        assert m1["std_stock_min"] == 60 and m1["std_stock_max"] == 50 and m1["std_warning"] == "STD MIN > MAX"
         assert m2["std_stock_min"] == 5 and m2["std_stock_max"] == 40 and m2["ics_name"] == "ZT NAME M2"
 
     def test_partial_std_merge_conflict_row_only(self, admin):
-        # file only has STD STOCK MAX=50 while existing MIN=100 -> row should fail, not the whole request
+        # file only has STD STOCK MAX; merge with existing MIN must not break the request
         b = xlsx_bytes(["Lane", "Product", "Type", "ICS No.", "STD STOCK MAX"],
                        [["ZT9", PROD, TYP["M1"], ICS["M1"], 50], ["ZT9", PROD, TYP["M2"], ICS["M2"], 45]])
         c = upload(admin, f"{API}/import/items/confirm", "items.xlsx", b)

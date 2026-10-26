@@ -73,6 +73,13 @@ Aplikasi web profesional untuk Control Data Stock & Production di perusahaan man
 - Dashboard /api/dashboard/summary ditulis ulang dari needs_entries + smt_stock + items: chart PLAN=ΣPLAN CUSTOMER, ACTUAL=ΣACTUAL S3+S1+S2 (pilihan user, bukan BALANCE); kartu Part (ΣPLAN/ACTUAL shift), Lamp Assy (PLAN/ACTUAL CUSTOMER); Item Shortage (TYPE unik master, status tanggal terakhir, terburuk per TYPE); Pencapaian 4 kategori >97 / >96–97 / 90–96 / <90 per TYPE (total actual/total plan); Top Shortage BALANCE terendah; Komposisi per GROUP master (TYPE unik + total stock terbaru).
 - Teruji iteration_9: 64/64 backend, frontend e2e lulus.
 
+
+## Implemented (2026-06, iterasi 10) — Master Item data user + Export/Import Excel
+- Master Item diperbarui dari items_.xlsx user (618 item, semua update, 0 duplikat): GROUP angka → "GROUP n" (110 kosong), STD MIN/MAX terisi 508 item.
+- STD MIN > MAX kini disimpan apa adanya + field `std_warning` ("STD MIN > MAX", 15 item) dengan ikon peringatan di tabel & hitungan peringatan di preview import (keputusan user).
+- Export di semua halaman CrudPage kini .xlsx asli via POST /api/export/xlsx (ICS No disimpan sebagai teks agar nol di depan aman); file export bisa langsung di-import ulang (round-trip diuji: 618 duplikat, 0 invalid).
+- Fix hitungan preview import ("new" tidak lagi negatif), dialog import tidak terpotong.
+
 ## Backlog / Remaining
 - P1: Import Excel untuk grid Kebutuhan (PLAN CUSTOMER/PLAN/ACTUAL).
 - P2: Export Excel dengan layout asli DATA STOCK; brute-force lockout; password reset; split server.py.
