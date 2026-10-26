@@ -587,7 +587,7 @@ def register_crud(dataset: str):
             if pr:
                 out = [o for o in out if o.get("proses_mesin") == pr]
         if status:
-            out = [o for o in out if o.get("status") == status or o.get("variance_status") == status or o.get("indikator") == status]
+            out = [o for o in out if o.get("status") == status or o.get("variance_status") == status or o.get("indikator") == status or o.get("status_part") == status]
         return out
 
     @api.post(f"/{dataset}")
@@ -1240,7 +1240,7 @@ async def meta_options(user: dict = Depends(get_current_user)):
             "indikator": ["PASS", "MINUS", "OVER", "BELUM DISET"],
             "lamp_status": ["SELESAI", "PROSES", "BELUM MULAI"],
             "needs_status": ["CUKUP", "PAS", "SHORTAGE", "BELUM DICEK"],
-            "status_part": ["SHORTAGE", "POTENSI SHORTAGE", "TIDAK SHORTAGE", "STD BELUM DISET"],
+            "status_part": ["SHORTAGE", "POTENSI SHORTAGE", "TIDAK SHORTAGE", "STD BELUM DISET", "BELUM TERSEDIA"],
             "status_mesin": MESIN_OPTIONS,
             "variance_status": ["OK", "VARIANCE +", "VARIANCE -", "BELUM DICEK"]}
 
@@ -1548,7 +1548,11 @@ async def import_confirm(dataset: str, request: Request, file: UploadFile = File
                 key["shift"] = r.get("shift", "")
         existing = await db[module].find_one(key)
         if existing:
-            merged = normalize(module, {**existing, **{k: v for k, v in r.items() if k in present}})
+            try:
+                merged = normalize(module, {**existing, **{k: v for k, v in r.items() if k in present}})
+            except HTTPException:
+                skipped += 1
+                continue
             r = {k: v for k, v in merged.items() if k in present or k not in existing or k in COMPUTED_KEYS}
             stamp(r, user, False)
             await db[module].update_one({"_id": existing["_id"]}, {"$set": r}); updated += 1

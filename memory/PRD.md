@@ -65,8 +65,15 @@ Aplikasi web profesional untuk Control Data Stock & Production di perusahaan man
 - Endpoint: GET /api/needs-grid?date, PATCH /api/needs-grid/cell, PATCH /api/smt-stock/{id}/cell (angka bulat ≥0, role read → 403).
 - Teruji iteration_8 (backend 45/45 setelah fix, frontend e2e lulus).
 
+
+## Implemented (2026-06, iterasi 9) — Import fix, Kebutuhan v2, Dashboard v2
+- FIX import Master Item: CSV non-UTF8 (cp1252/0xA0), delimiter ';', .xls (xlrd), header nbsp, angka koma; update import hanya menimpa kolom yang ada di file; baris invalid (STD MIN>MAX) dilewati per baris.
+- Kebutuhan: kolom ACTUAL CUSTOMER (ASSY) (editable), ACHIEVEMENT S3/S1/S2 = ACTUAL/PLAN×100 ('-' bila plan 0). Import Excel (mode Tambah/Update, kunci TANGGAL+ICS NO+TYPE, preview, validasi, ringkasan) + Export Excel. Endpoint /api/needs-grid/import/{template,preview,confirm}.
+- Stock Part Production: kolom INDIKATOR dihapus, STATUS PART = status Kebutuhan (date+ics+type) / 'BELUM TERSEDIA'; filter Status Part.
+- Dashboard /api/dashboard/summary ditulis ulang dari needs_entries + smt_stock + items: chart PLAN=ΣPLAN CUSTOMER, ACTUAL=ΣACTUAL S3+S1+S2 (pilihan user, bukan BALANCE); kartu Part (ΣPLAN/ACTUAL shift), Lamp Assy (PLAN/ACTUAL CUSTOMER); Item Shortage (TYPE unik master, status tanggal terakhir, terburuk per TYPE); Pencapaian 4 kategori >97 / >96–97 / 90–96 / <90 per TYPE (total actual/total plan); Top Shortage BALANCE terendah; Komposisi per GROUP master (TYPE unik + total stock terbaru).
+- Teruji iteration_9: 64/64 backend, frontend e2e lulus.
+
 ## Backlog / Remaining
-- P1: Dashboard (KPI shortage & komposisi group) masih memakai logika Kebutuhan lama — selaraskan ke STATUS PART baru bila user setuju.
 - P1: Import Excel untuk grid Kebutuhan (PLAN CUSTOMER/PLAN/ACTUAL).
 - P2: Export Excel dengan layout asli DATA STOCK; brute-force lockout; password reset; split server.py.
 

@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 9 testing covered the backend and the frontend. Backend: I wrote a new file, test_iter9_import_dashboard.py (19 tests), and re-ran iter8 (45 tests): 63 of 64 pass. Covered: Master Item import (cp1252 CSV with 0xA0, ';' delimiter, nbsp header, .xls via xlwt, export-like xlsx), and missing columns are not blanked. needs-grid now returns actual_customer and achievement_s3/s1/s2, and the actual_customer PATCH works. Needs import was checked end to end: preview/confirm add and update modes, 400 on missing header, 403 for assy, gagal for invalid date, unknown item, decimal, negative, STATUS MESIN or in-file duplicates, empty cells do not overwrite, no duplicate docs, serial and dd/mm dates, template and export round-trip. smt-stock status_part equals the needs-grid status and shows BELUM TERSEDIA when there is no pair. Dashboard numbers match hand-computed values: totals and pct, chart per date, achievement buckets incl. exactly 97 -> b96_97 and 89.99 -> lt90 with plan-0 type excluded, shortage by latest date with worst status per TYPE, top shortage, group composition from the latest stock per item (including later shifts), date and product filters, null pct on an empty period. Frontend: Playwright end to end on /production-needs (column order, achievement shown as '98,00%' or '-', inline edit of ACTUAL CUSTOMER, Export download, Import dialog update flow with preview counts, result counts and grid refresh), /smt-stock (no INDIKATOR column, STATUS PART values correct), Dashboard (all cards match the backend, '-' for null, chart title, Total Stock column, Top Shortage), Master Item CSV import UI, Audit/Backup load, assy read-only (no Import button). All seeded data is cleaned up: items=618, smt_stock=0, needs_entries=0.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/import/items/confirm", "issue": "If one row's merged values break the STD rule, the whole request returns 400 instead of failing only that row. Example: the file has only STD STOCK MAX=50 while the existing item has MIN=100. Cause: normalize(module, merged) at server.py ~L1551 is not wrapped in try/except. Rows already processed before that row stay committed, so the import is partially applied. Preview does not flag this either, because preview does not merge with existing data, so it shows the row as valid."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "NeedsImportDialog", "issue": "At 1920px, content overflows the dialog to the right: the 'Update Data' mode card, the preview table and the 'Konfirmasi & Simpan' button are cut off. Cause: DialogContent is a CSS grid with an implicit auto column, so wide content grows the column. Fix: add 'grid-cols-[minmax(0,1fr)]' (or min-w-0 on children) to DialogContent in NeedsImportDialog.", "selector": "[data-testid='needs-import-dialog']", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [
+      {"flow": "ProductionNeeds date change", "issue": "load() does not cancel or ignore stale responses. On first load the GET for today is sent twice; if the user changes the date before it returns, an older response could overwrite the newer one. Seen once: the grid still showed today's rows 2.5s after the date was changed, then corrected itself. Low risk; consider an AbortController or a request-id guard.", "affected_selectors": ["[data-testid='needs-date-input']"]}
+    ],
+    "design_issues": [
+      {"screen": "/smt-stock", "issues": ["The INDIKATOR column was removed, but the INDIKATOR filter (filter-status, PASS/MINUS/OVER/BELUM DISET) is still in the FilterBar, and the page subtitle still says 'Indikator = Total vs Std Min/Max'. Replace them with a STATUS PART filter and update the subtitle."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter9_import_dashboard.py", "/app/backend/tests/seed_iter9_ui.py", "/app/backend/tests/test_iter8_needs_grid.py", "/app/test_reports/pytest/pytest_iter9.xml"],
+  "action_items": [
+    "Wrap the merge normalize() in import_confirm (items) in try/except HTTPException so only that row counts as skipped/invalid. Optionally run the same merge check in import_preview.",
+    "Fix horizontal overflow in NeedsImportDialog (DialogContent grid column min width).",
+    "SMTStock page: remove or replace the INDIKATOR filter with a STATUS PART filter and update the subtitle text.",
+    "(Optional) Guard ProductionNeeds load() against stale responses."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1820 lines; split into modules (needs grid/import, dashboard, generic import).",
+    "Needs import confirm runs one find_one_and_update plus one audit insert per row; large files will be slow. Consider bulk_write.",
+    "The smt-stock 'status' query filter still matches o.indikator, which is a hidden field now; status_part filtering is not supported in the backend list filter."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter9_import_dashboard.py", "/app/backend/tests/seed_iter9_ui.py"],
+  "success_rate": {"backend": "98% (63/64)", "frontend": "95% (all flows work; one dialog overflow UI bug)"},
+  "test_credentials": "admin/admin123, assy/password123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Temporary items 9900000901-9900000911 (product ZTPROD9), plus smt_stock and needs_entries on 2031-03-01/02/03/05 and 2031-04-01. All removed; items=618, smt_stock=0, needs_entries=0. xlwt was pip-installed only for test .xls generation (not added to requirements).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: pytest /app/backend/tests/test_iter9_import_dashboard.py /app/backend/tests/test_iter8_needs_grid.py -n 0. The module fixture seeds and cleans up automatically. For UI tests: `cd /app/backend/tests && python seed_iter9_ui.py seed` (then 'clean'), then use date 2031-03-02, search 'ZT9', product ZTPROD9 on the Dashboard. The only failing test, test_partial_std_merge_conflict_row_only, is the known items import bug.",
+  "rca of the issue": "Items import: import_confirm merges existing+file values and calls normalize() outside the per-row error handling, and normalize raises HTTPException(400) when MIN>MAX. That aborts the whole loop. Repro: an existing item with std min=100/max=300, then upload an xlsx with Lane/Product/Type/ICS No./STD STOCK MAX=50 -> 400 'STD STOCK MIN tidak boleh lebih besar dari STD STOCK MAX'. Mitigation: try/except around the merge normalize -> skipped += 1; continue."
+}

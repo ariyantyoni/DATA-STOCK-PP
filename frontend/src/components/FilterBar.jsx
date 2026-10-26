@@ -53,6 +53,7 @@ export default function FilterBar({ filters, values, setValues, options }) {
       {filters.includes("type") && <FSelect label="Type / Model" value={values.type} onChange={(v) => set("type", v)} options={options.types || []} testId="filter-type" />}
       {filters.includes("ics_no") && <FSelect label="ICS No." value={values.ics_no} onChange={(v) => set("ics_no", v)} options={options.ics_nos || []} testId="filter-ics-no" />}
       {filters.includes("indikator") && <FSelect label="Indikator" value={values.status} onChange={(v) => set("status", v)} options={options.indikator || []} testId="filter-status" />}
+      {filters.includes("status_part") && <FSelect label="Status Part" value={values.status} onChange={(v) => set("status", v)} options={options.status_part || []} testId="filter-status" />}
       {filters.includes("stock_status") && <FSelect label="Status Stock" value={values.status} onChange={(v) => set("status", v)} options={options.stock_status || []} testId="filter-status" />}
       {filters.includes("lamp_status") && <FSelect label="Status" value={values.status} onChange={(v) => set("status", v)} options={options.lamp_status || []} testId="filter-status" />}
       {filters.includes("needs_status") && <FSelect label="Status" value={values.status} onChange={(v) => set("status", v)} options={options.needs_status || []} testId="filter-status" />}

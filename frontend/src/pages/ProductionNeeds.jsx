@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api, { canWrite, fmtNum, fmtPct2, formatApiErrorDetail } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
@@ -97,12 +97,14 @@ export default function ProductionNeeds() {
   const [f, setF] = useState({});
   const [search, setSearch] = useState("");
 
+  const reqId = useRef(0);
   const load = useCallback(async () => {
     if (!date) return;
+    const my = ++reqId.current;
     setLoading(true);
-    try { const { data } = await api.get("/needs-grid", { params: { date } }); setRows(data); }
-    catch (e) { toast.error(formatApiErrorDetail(e.response?.data?.detail)); }
-    finally { setLoading(false); }
+    try { const { data } = await api.get("/needs-grid", { params: { date } }); if (my === reqId.current) setRows(data); }
+    catch (e) { if (my === reqId.current) toast.error(formatApiErrorDetail(e.response?.data?.detail)); }
+    finally { if (my === reqId.current) setLoading(false); }
   }, [date]);
   useEffect(() => { load(); }, [load]);
 

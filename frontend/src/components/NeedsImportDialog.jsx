@@ -98,7 +98,7 @@ export default function NeedsImportDialog({ open, onOpenChange, date, onDone }) 
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset(); }}>
-      <DialogContent className="max-w-4xl bg-card border-border max-h-[90vh] overflow-y-auto" data-testid="needs-import-dialog">
+      <DialogContent className="max-w-4xl grid-cols-[minmax(0,1fr)] bg-card border-border max-h-[90vh] overflow-y-auto" data-testid="needs-import-dialog">
         <DialogHeader>
           <DialogTitle className="font-heading flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-primary" /> Import Excel · Kebutuhan Assy</DialogTitle>
           <DialogDescription>Kolom wajib: TANGGAL, ICS NO, TYPE. Kolom yang diimpor: PLAN/ACTUAL CUSTOMER (ASSY), PLAN/ACTUAL S3/S1/S2, STATUS MESIN. Kolom master & hasil hitung diabaikan. Cell kosong tidak menimpa data yang sudah ada.</DialogDescription>

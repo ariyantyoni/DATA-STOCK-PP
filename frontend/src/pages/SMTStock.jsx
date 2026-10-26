@@ -47,9 +47,9 @@ export default function SMTStock() {
     { key: "part_ragu", inline: true, label: "Part Ragu-ragu", type: "number" },
   ];
   return (
-    <CrudPage title="Stock Part Production" subtitle="Total Stock Hari Ini = GROUP 1 + … + GROUP 6 + PART RAGU-RAGU · Indikator = Total vs Std Min/Max (Master Item) · ICS Name / Group / Std Stock otomatis dari Master Item"
+    <CrudPage title="Stock Part Production" subtitle="Total Stock Hari Ini = GROUP 1 + … + GROUP 6 + PART RAGU-RAGU · STATUS PART mengikuti Kebutuhan Assy VS. Stock Part (tanggal + ICS NO + TYPE) · ICS Name / Group / Std Stock otomatis dari Master Item"
       icon={Boxes} endpoint="/smt-stock" inlineEdit dataset="smt-stock" module="smt_stock"
       columns={columns} formFields={formFields} note="Pilih item dari Master Item untuk mengisi Lane/Product/Type/ICS otomatis"
-      filters={["date", "shift", "proses_mesin", "product", "lane", "type", "ics_no", "indikator"]} options={options} refreshOptions={refresh} />
+      filters={["date", "shift", "proses_mesin", "product", "lane", "type", "ics_no", "status_part"]} options={options} refreshOptions={refresh} />
   );
 }
