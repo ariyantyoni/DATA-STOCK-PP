@@ -80,6 +80,14 @@ Aplikasi web profesional untuk Control Data Stock & Production di perusahaan man
 - Export di semua halaman CrudPage kini .xlsx asli via POST /api/export/xlsx (ICS No disimpan sebagai teks agar nol di depan aman); file export bisa langsung di-import ulang (round-trip diuji: 618 duplikat, 0 invalid).
 - Fix hitungan preview import ("new" tidak lagi negatif), dialog import tidak terpotong.
 
+
+## Implemented (2026-06, iterasi 11) — Dashboard KPI rekonsiliasi
+- dashboard_summary hanya menghitung baris Kebutuhan yang item-nya ada di Master Item (excluded_no_master dilaporkan di period).
+- Top Shortage (BLC): hanya BALANCE ≤ 0, urut defisit terbesar, tampil product/ics/type/ics_name (pilihan user).
+- Komposisi per GROUP: GROUP 1–6 selalu tampil. Kartu >96–97% dipertahankan (pilihan user).
+- Dashboard auto-refresh senyap tiap 30 dtk + saat tab/jendela aktif; sumbu % chart dinamis (min 130%).
+- Teruji iteration_10: 18/18 skenario KPI + rekonsiliasi pymongo independen, 64/64 regresi, UI cocok dengan API.
+
 ## Backlog / Remaining
 - P1: Import Excel untuk grid Kebutuhan (PLAN CUSTOMER/PLAN/ACTUAL).
 - P2: Export Excel dengan layout asli DATA STOCK; brute-force lockout; password reset; split server.py.

@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 10: Dashboard KPI live computation verified end-to-end. New pytest suite test_iter10_dashboard_kpi.py (18 tests) seeds temporary ZT10 items (product ZTPROD10, 15 ICS / 13 types) on 2032-03-01/02 via POST /api/items, PATCH /api/needs-grid/cell, POST /api/smt-stock + PATCH /api/smt-stock/{id}/cell, and covers Test1-7: part production delta, lamp assy independence, pct null, achievement buckets (89->lt90, 90/96->mid, 96.5/97->b96_97, 98->gt97, plan0/empty excluded, multi-ICS/multi-date aggregation), item shortage transitions via stock and via plan/actual (worst status per type, latest date wins, STD BELUM DISET), top shortage (only <=0, ascending, reorder, disappear, empty), group composition (GROUP1..6 always, latest record by date+shift order S3<S1<S2, update), and an independent pymongo reference implementation reconciled with the API for product filter, all products and single day. 18/18 pass. Regression test_iter8_needs_grid.py + test_iter9_import_dashboard.py: 64/64 pass (-n 0). Frontend: all resume-* cards, group-row-GROUP-n, top-shortage-* match API exactly after filter, page reload and logout/re-login; '-' shown for null pct/average; no NaN/Infinity; top-shortage-empty shown for empty period; silent refresh on window focus updates cards without spinner. All seeded data deleted; DB back to 618 items / 169 types / 508 with std / needs_entries=0 / smt_stock=0.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/dashboard/summary (smt_trend)", "issue": "MONITORING chart pct mixes PLAN CUSTOMER (plan bar) with ACTUAL S3+S1+S2 (actual bar); pct can be >2000% while right Y axis domain is fixed [0,130] -> line is drawn far outside the % scale (right axis compressed to bottom, TARGET 100% line meaningless). Not part of the KPI spec but inconsistent with card A formula (plan S3+S1+S2)."},
+      {"endpoint": "/api/dashboard/summary (top_shortage / shortage)", "issue": "Interpretation note: 'latest date' is per ics_no+type among rows that HAVE a balance/status. If the latest date in the period has no SHIFT 3 stock for an item, an older date's balance/status is used instead of treating the item as having no data. Confirm with user if intended."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Top Shortage list", "issue": "data-testid uses only type (top-shortage-{type}); multiple ICS with same TYPE produce duplicate testids (and type with spaces). Consider top-shortage-{ics_no}-{type}.", "selector": "[data-testid^='top-shortage-']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard - MONITORING PENCAPAIAN PRODUKSI", "issues": ["% line overflows the 0-130% right axis when ratio is large; right axis labels (130%, TARGET 100%) squashed near the bottom"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter10_dashboard_kpi.py", "/app/backend/tests/seed_iter10_ui.py", "/app/test_reports/pytest/iter10.xml"],
+  "action_items": [
+    "(Optional) Align smt_trend with card A (plan S3+S1+S2 vs actual S3+S1+S2) or clamp/allowDataOverflow the % axis so the line stays readable",
+    "(Optional) Make top-shortage data-testid unique per ics_no+type",
+    "(Optional) Confirm with user whether items whose latest date lacks stock should fall back to older status/balance"
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1860 lines - should be split into modules (dashboard, needs grid, import)",
+    "dashboard_summary loads all needs_entries/smt_stock/items for the period into memory each call (to_list(200000)) and is polled every 30s per open client - fine for current volume but consider aggregation/indices on date",
+    "needs_rows_period/shift3_stock_map: when duplicate SHIFT 3 stock rows exist for same date+item, last by updated_at wins silently"
+  ],
+  "updated_files": ["/app/backend/tests/test_iter10_dashboard_kpi.py", "/app/backend/tests/seed_iter10_ui.py"],
+  "success_rate": {"backend": "100% (18/18 new + 64/64 regression)", "frontend": "100%"},
+  "test_credentials": "admin / admin123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Temporary ZT10 items/needs_entries/smt_stock (ICS 9900001001-15, product ZTPROD10, dates 2032-03-01/02) created and fully deleted. Real Master Item untouched (snapshot of ics/type/std verified equal after teardown).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && export $(grep -v '^#' .env | xargs) && export REACT_APP_BACKEND_URL=... && pytest tests/test_iter10_dashboard_kpi.py -n 0. test file contains an independent pymongo reference() of all dashboard cards usable for reconciliation. For UI: python tests/seed_iter10_ui.py seed|clean (run from tests dir), then filter dashboard product ZTPROD10 dates 2032-03-01..02. Expected: part 6.000/5.745/95,75; assy 700/0/0,00; shortage 13/2/1/1; achv 6 types (1/2/2/1, avg 98/96,75/93/89); top shortage ZT10 W -90; GROUP1 2/1050, GROUP2 1/1000, GROUP5 2/927, GROUP6 1/500."
+}

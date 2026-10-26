@@ -116,6 +116,8 @@ export default function Dashboard() {
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVis); window.removeEventListener("focus", onVis); };
   }, [load]);
 
+  const pctMax = Math.max(130, Math.ceil(Math.max(0, ...((data?.smt_trend || []).map((t) => t.pct || 0))) / 10) * 10);
+
   if (loading || !data)
     return <div className="flex items-center justify-center py-32"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
@@ -183,7 +185,7 @@ export default function Dashboard() {
               <CartesianGrid strokeDasharray="3 3" stroke="var(--grid)" />
               <XAxis dataKey="date" tick={axis} tickFormatter={(d) => d?.slice(5)} />
               <YAxis yAxisId="left" tick={axis} label={{ value: "Pcs", angle: -90, position: "insideLeft", fill: "var(--axis)", fontSize: 11 }} />
-              <YAxis yAxisId="right" orientation="right" tick={axis} domain={[0, 130]} ticks={[0, 25, 50, 75, 100, 130]} tickFormatter={(v) => `${v}%`} />
+              <YAxis yAxisId="right" orientation="right" tick={axis} domain={[0, pctMax]} ticks={pctMax === 130 ? [0, 25, 50, 75, 100, 130] : undefined} tickFormatter={(v) => `${v}%`} />
               <Tooltip content={<TooltipBox />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <ReferenceLine yAxisId="right" y={100} stroke="#ef4444" strokeDasharray="6 4" strokeWidth={1.5}
@@ -229,7 +231,7 @@ export default function Dashboard() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
               {data.top_shortage.map((n) => (
-                <div key={n.id} className="flex items-center justify-between border-b border-border/50 py-2" data-testid={`top-shortage-${n.type}`}>
+                <div key={n.id} className="flex items-center justify-between border-b border-border/50 py-2" data-testid={`top-shortage-${n.ics_no}-${(n.type || "").replace(/\s+/g, "-")}`}>
                   <div>
                     <p className="text-sm text-foreground font-medium">{n.type}{n.ics_name ? <span className="text-muted-foreground font-normal"> · {n.ics_name}</span> : null}</p>
                     <p className="text-[11px] font-mono-data text-muted-foreground">{n.date} · {n.product || "-"} · {n.ics_no} · Plan {fmtNum(n.plan_customer)} · Stock {n.act_stock === null ? "-" : fmtNum(n.act_stock)} · {n.status_part || "-"}</p>
