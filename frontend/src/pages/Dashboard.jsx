@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import api, { fmtNum, fmtPct } from "@/lib/api";
+import api, { fmtNum } from "@/lib/api";
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, PieChart, Pie, Cell, Legend, ComposedChart, Line, ReferenceLine,
@@ -24,7 +24,10 @@ function TooltipBox({ active, payload, label }) {
   );
 }
 
-function MetricCard({ title, cols, testId }) {
+const pct2 = (v) => (v === null || v === undefined ? "-" : new Intl.NumberFormat("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v));
+const pctTone = (v) => (v === null || v === undefined ? "text-muted-foreground" : v >= 100 ? "text-emerald-400" : "text-amber-400");
+
+function MetricCard({ title, cols, testId, note }) {
   return (
     <div data-testid={testId} className="rounded-xl border border-border bg-card/70 p-5 hover:border-primary/30 transition-colors">
       <p className="text-sm font-mono-data uppercase tracking-wider text-muted-foreground mb-4 font-bold">{title}</p>
@@ -37,7 +40,18 @@ function MetricCard({ title, cols, testId }) {
           </div>
         ))}
       </div>
+      {note && <p className="text-[11px] font-mono-data text-muted-foreground mt-4 border-t border-border/60 pt-2" data-testid={`${testId}-note`}>{note}</p>}
     </div>
+  );
+}
+
+function AchvCard({ title, d, tone, testId }) {
+  return (
+    <MetricCard testId={testId} title={title} cols={[
+      { label: "Total Plan", value: fmtNum(d.total_plan), unit: "Type" },
+      { label: "Act", value: fmtNum(d.act), unit: "Type", accent: "text-cyan-400" },
+      { label: "Average", value: pct2(d.average), unit: "%", accent: tone },
+    ]} />
   );
 }
 
@@ -105,7 +119,7 @@ export default function Dashboard() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight">Dashboard Kontrol Produksi</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Ringkasan produksi Part & ASSY, stock Part, kebutuhan (BLC), dan variance</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Semua kartu & grafik bersumber dari Kebutuhan Assy VS. Stock Part Production, Stock Part Production, dan Master Item</p>
         </div>
         <div className="flex items-end gap-2 flex-wrap">
           <div className="flex flex-col gap-1">
@@ -130,42 +144,31 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <MetricCard testId="resume-part" title="PRODUKSI PART PRODUCTION" cols={[
           { label: "Total Plan", value: fmtNum(r.part_production.total_plan), unit: "Pcs" },
-          { label: "Act Prod", value: fmtNum(r.part_production.act_prod), unit: "Pcs", accent: "text-cyan-400" },
-          { label: "Pencapaian", value: fmtNum(r.part_production.pct), unit: "%", accent: r.part_production.pct >= 100 ? "text-emerald-400" : "text-amber-400" },
-        ]} />
+          { label: "Total Actual", value: fmtNum(r.part_production.act_prod), unit: "Pcs", accent: "text-cyan-400" },
+          { label: "Pencapaian", value: pct2(r.part_production.pct), unit: "%", accent: pctTone(r.part_production.pct) },
+        ]} note="Σ PLAN & ACTUAL S3+S1+S2 · Kebutuhan Assy VS. Stock Part" />
         <MetricCard testId="resume-assy" title="PRODUKSI LAMP ASSY" cols={[
           { label: "Total Plan", value: fmtNum(r.lamp_assy.total_plan), unit: "Pcs" },
-          { label: "Act Prod", value: fmtNum(r.lamp_assy.act_prod), unit: "Pcs", accent: "text-cyan-400" },
-          { label: "Pencapaian", value: fmtNum(r.lamp_assy.pct), unit: "%", accent: r.lamp_assy.pct >= 100 ? "text-emerald-400" : "text-amber-400" },
-        ]} />
+          { label: "Total Actual", value: fmtNum(r.lamp_assy.act_prod), unit: "Pcs", accent: "text-cyan-400" },
+          { label: "Pencapaian", value: pct2(r.lamp_assy.pct), unit: "%", accent: pctTone(r.lamp_assy.pct) },
+        ]} note="Σ PLAN CUSTOMER (ASSY) & Σ ACTUAL CUSTOMER (ASSY)" />
         <MetricCard testId="resume-shortage" title="ITEM SHORTAGE" cols={[
           { label: "Total Part", value: fmtNum(r.shortage.total_part), unit: "Type" },
           { label: "Tidak Shortage", value: fmtNum(r.shortage.tidak_shortage), unit: "Type", accent: "text-emerald-400" },
           { label: "Potensi Shortage", value: fmtNum(r.shortage.potensi_shortage), unit: "Type", accent: "text-amber-400" },
           { label: "Shortage", value: fmtNum(r.shortage.shortage), unit: "Type", accent: "text-red-500" },
-        ]} />
+        ]} note={`Total Part = TYPE unik Master Item · status per TYPE dari data tanggal terakhir${r.shortage.latest_date ? ` (s/d ${r.shortage.latest_date})` : ""} · ${fmtNum(r.shortage.with_status)} TYPE berstatus, ${fmtNum(r.shortage.no_status)} belum ada data${r.shortage.std_belum_diset ? `, ${fmtNum(r.shortage.std_belum_diset)} STD belum diset` : ""}`} />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <AchvCard testId="resume-achv-high" title="PENCAPAIAN PART PRODUCTION (>97%)" d={r.achievement.gt97} tone="text-emerald-400" />
+        <AchvCard testId="resume-achv-9697" title="PENCAPAIAN PART PRODUCTION (>96–97%)" d={r.achievement.b96_97} tone="text-lime-400" />
+        <AchvCard testId="resume-achv-mid" title="PENCAPAIAN PART PRODUCTION (90–96%)" d={r.achievement.mid} tone="text-amber-400" />
+        <AchvCard testId="resume-achv-low" title="PENCAPAIAN PART PRODUCTION (<90%)" d={r.achievement.lt90} tone="text-red-500" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <MetricCard testId="resume-achv-high" title="PENCAPAIAN PART PRODUCTION (>97%)" cols={[
-          { label: "Total Plan", value: fmtNum(r.achievement.gt97.total_plan), unit: "Type" },
-          { label: "Act", value: fmtNum(r.achievement.gt97.act), unit: "Type", accent: "text-cyan-400" },
-          { label: "Average", value: fmtNum(r.achievement.gt97.average), unit: "%", accent: "text-emerald-400" },
-        ]} />
-        <MetricCard testId="resume-achv-mid" title="PENCAPAIAN PART PRODUCTION (90-96%)" cols={[
-          { label: "Total Plan", value: fmtNum(r.achievement.mid.total_plan), unit: "Type" },
-          { label: "Act", value: fmtNum(r.achievement.mid.act), unit: "Type", accent: "text-cyan-400" },
-          { label: "Average", value: fmtNum(r.achievement.mid.average), unit: "%", accent: "text-amber-400" },
-        ]} />
-        <MetricCard testId="resume-achv-low" title="PENCAPAIAN PART PRODUCTION (<90%)" cols={[
-          { label: "Total Plan", value: fmtNum(r.achievement.lt90.total_plan), unit: "Type" },
-          { label: "Act", value: fmtNum(r.achievement.lt90.act), unit: "Type", accent: "text-cyan-400" },
-          { label: "Average", value: fmtNum(r.achievement.lt90.average), unit: "%", accent: "text-red-500" },
-        ]} />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Panel icon={TrendingUp} title="MONITORING PENCAPAIAN PART PRODUCTION" className="lg:col-span-2">
+        <Panel icon={TrendingUp} title="MONITORING PENCAPAIAN PRODUKSI" className="lg:col-span-2">
           <ResponsiveContainer width="100%" height={300}>
             <ComposedChart data={data.smt_trend}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--grid)" />
@@ -176,9 +179,9 @@ export default function Dashboard() {
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <ReferenceLine yAxisId="right" y={100} stroke="#ef4444" strokeDasharray="6 4" strokeWidth={1.5}
                 label={{ value: "TARGET 100%", position: "insideTopRight", fill: "#ef4444", fontSize: 11, fontWeight: 700 }} />
-              <Bar yAxisId="left" dataKey="plan" name="PLAN" fill="#84cc16" radius={[2, 2, 0, 0]} />
-              <Bar yAxisId="left" dataKey="actual" name="ACTUAL" fill="#f97316" radius={[2, 2, 0, 0]} />
-              <Line yAxisId="right" type="monotone" dataKey="pct" name="%" stroke="#38bdf8" strokeWidth={2.5} dot={{ r: 2 }} />
+              <Bar yAxisId="left" dataKey="plan" name="PLAN (PLAN CUSTOMER)" fill="#84cc16" radius={[2, 2, 0, 0]} />
+              <Bar yAxisId="left" dataKey="actual" name="ACTUAL (S3+S1+S2)" fill="#f97316" radius={[2, 2, 0, 0]} />
+              <Line yAxisId="right" type="monotone" dataKey="pct" name="%" connectNulls stroke="#38bdf8" strokeWidth={2.5} dot={{ r: 2 }} />
             </ComposedChart>
           </ResponsiveContainer>
         </Panel>
@@ -190,36 +193,39 @@ export default function Dashboard() {
                 <tr className="border-b border-border text-muted-foreground">
                   <th className="text-left py-2 font-semibold uppercase text-xs tracking-wide">Group</th>
                   <th className="text-right py-2 font-semibold uppercase text-xs tracking-wide">Total Type</th>
+                  <th className="text-right py-2 font-semibold uppercase text-xs tracking-wide">Total Stock</th>
                   <th className="text-right py-2 font-semibold uppercase text-xs tracking-wide">Shortage Type</th>
                 </tr>
               </thead>
               <tbody>
                 {(data.group_composition || []).map((g) => (
-                  <tr key={g.group} className="border-b border-border/40">
+                  <tr key={g.group} className="border-b border-border/40" data-testid={`group-row-${g.group.replace(/ /g, "-")}`}>
                     <td className="py-2.5 font-semibold text-foreground">{g.group}</td>
                     <td className="py-2.5 text-right font-mono-data tabular-nums">{fmtNum(g.total_type)}</td>
+                    <td className="py-2.5 text-right font-mono-data tabular-nums">{fmtNum(g.total_stock)} <span className="text-[10px] text-muted-foreground">pcs</span></td>
                     <td className={cn("py-2.5 text-right font-mono-data tabular-nums font-bold", g.shortage_type > 0 ? "text-red-500" : "text-emerald-500")}>{fmtNum(g.shortage_type)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <p className="text-[11px] font-mono-data text-muted-foreground mt-3">Sumber: Stock Part Production (data terbaru per item pada periode) · GROUP dari Master Item</p>
         </Panel>
       </div>
 
       <div className="grid grid-cols-1 gap-4">
         <Panel icon={AlertTriangle} title="Top Shortage (BLC)" tone="text-red-600">
           {data.top_shortage.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">Tidak ada item shortage</p>
+            <p className="text-sm text-muted-foreground py-4 text-center">Belum ada data BALANCE pada periode ini</p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
               {data.top_shortage.map((n) => (
-                <div key={n.id} className="flex items-center justify-between border-b border-border/50 py-2">
+                <div key={n.id} className="flex items-center justify-between border-b border-border/50 py-2" data-testid={`top-shortage-${n.type}`}>
                   <div>
-                    <p className="text-sm text-foreground font-medium">{n.type}</p>
-                    <p className="text-[11px] font-mono-data text-muted-foreground">{n.ics_no} · Plan {fmtNum(n.plan_assy)} · Stock {fmtNum(n.stock_ok_today)}</p>
+                    <p className="text-sm text-foreground font-medium">{n.type}{n.ics_name ? <span className="text-muted-foreground font-normal"> · {n.ics_name}</span> : null}</p>
+                    <p className="text-[11px] font-mono-data text-muted-foreground">{n.date} · {n.ics_no} · Plan {fmtNum(n.plan_customer)} · Stock {n.act_stock === null ? "-" : fmtNum(n.act_stock)} · {n.status_part || "-"}</p>
                   </div>
-                  <span className="font-mono-data text-sm text-red-600 font-bold">{fmtNum(n.blc)}</span>
+                  <span className={cn("font-mono-data text-sm font-bold", n.balance < 0 ? "text-red-600" : n.balance === 0 ? "text-amber-500" : "text-emerald-600")}>{fmtNum(n.balance)}</span>
                 </div>
               ))}
             </div>

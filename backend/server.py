@@ -5,7 +5,7 @@ import os
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, UploadFile, File
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -167,6 +167,10 @@ def num(v, default=0.0):
     try:
         if v is None or v == "":
             return default
+        if isinstance(v, str):
+            v = v.replace("\xa0", "").replace(" ", "").strip()
+            if "," in v:
+                v = v.replace(".", "").replace(",", ".")
         f = float(v)
         return default if f != f else f
     except Exception:
@@ -745,6 +749,10 @@ async def enrich_stock(docs: list) -> list:
             d["indikator"] = "MINUS"
         else:
             d["indikator"] = "PASS"
+    dates = {d.get("date") for d in docs if d.get("date")}
+    sp = {(r["date"], r["ics_no"], r["type"]): r["status_part"] for r in await needs_rows_period(dates=dates)} if dates else {}
+    for d in docs:
+        d["status_part"] = sp.get((d.get("date"), d.get("ics_no"), d.get("type"))) or "BELUM TERSEDIA"
     return docs
 
 
@@ -866,7 +874,7 @@ async def variance_view(p: dict, product: Optional[str], proses: Optional[str] =
 # ---------------------------------------------------------------------------
 # Kebutuhan Assy VS. Stock Part Production — grid format Excel (input per cell)
 # ---------------------------------------------------------------------------
-NEEDS_INT_FIELDS = ["plan_customer", "plan_s3", "actual_s3", "plan_s1", "actual_s1", "plan_s2", "actual_s2"]
+NEEDS_INT_FIELDS = ["plan_customer", "actual_customer", "plan_s3", "actual_s3", "plan_s1", "actual_s1", "plan_s2", "actual_s2"]
 NEEDS_MESIN_FIELDS = ["status_mesin_s3", "status_mesin_s1", "status_mesin_s2"]
 MESIN_OPTIONS = ["ON", "OFF", "DANDORI"]
 STOCK_INT_FIELDS = ["group1", "group2", "group3", "group4", "group5", "group6", "part_ragu"]
@@ -890,6 +898,7 @@ def compute_needs_grid(r: dict) -> dict:
     for s in (3, 1, 2):
         p, a = r.get(f"plan_s{s}"), r.get(f"actual_s{s}")
         r[f"balance_s{s}"] = None if p is None and a is None else r1(num(a) - num(p))
+        r[f"achievement_s{s}"] = round(num(a) / num(p) * 100, 4) if num(p) > 0 else None
     r["status_part"] = status_part(r["balance"], r.get("std_stock_min"), mx)
     return r
 
@@ -916,6 +925,17 @@ def needs_row(date: str, it: Optional[dict], ent: Optional[dict], stk: dict, ics
     r["updated_by_name"] = ent.get("updated_by_name")
     r["updated_at"] = ent.get("updated_at")
     return compute_needs_grid(r)
+
+
+async def needs_rows_period(date_from: Optional[str] = None, date_to: Optional[str] = None, dates=None) -> list:
+    q = {"date": {"$in": list(dates)}} if dates is not None else build_query({"date_from": date_from, "date_to": date_to})
+    ents = {(e.get("date"), e.get("ics_no"), e.get("type")): e for e in await db.needs_entries.find(q).to_list(200000)}
+    stk = {}
+    for st in await db.smt_stock.find({**q, "shift": "SHIFT 3"}).sort("updated_at", 1).to_list(200000):
+        stk.setdefault(st.get("date"), {})[(st.get("ics_no"), st.get("type"))] = num(st.get("total"))
+    keys = set(ents) | {(d, i, t) for d, m in stk.items() for (i, t) in m}
+    items = {(it.get("ics_no"), it.get("type")): it for it in await db.items.find({}).to_list(20000)}
+    return [needs_row(d, items.get((i, t)), ents.get((d, i, t)), stk.get(d, {}), i, t) for (d, i, t) in sorted(keys)]
 
 
 def valid_date(date: str) -> str:
@@ -1024,6 +1044,182 @@ async def smt_stock_cell(rid: str, body: CellBody, request: Request, user: dict 
 
 
 # ---------------------------------------------------------------------------
+# IMPORT EXCEL — Kebutuhan Assy VS. Stock Part Production
+# ---------------------------------------------------------------------------
+NEEDS_EXPORT_COLS = [
+    ("date", "TANGGAL"), ("lane", "LANE"), ("product", "PRODUCT"), ("type", "TYPE"), ("ics_no", "ICS NO"), ("ics_name", "ICS NAME"),
+    ("proses_mesin", "PROSES MESIN"), ("group", "GROUP"), ("std_stock_min", "STD STOCK MIN"), ("std_stock_max", "STD STOCK MAX"),
+    ("act_stock", "ACT STOCK JAM 01:00"), ("plan_customer", "PLAN CUSTOMER (ASSY)"), ("actual_customer", "ACTUAL CUSTOMER (ASSY)"),
+    ("balance", "BALANCE"), ("level_stock", "LEVEL STOCK (DAY)"), ("status_part", "STATUS PART"),
+] + [c for s_ in (3, 1, 2) for c in [(f"plan_s{s_}", f"PLAN S{s_}"), (f"actual_s{s_}", f"ACTUAL S{s_}"), (f"achievement_s{s_}", f"ACHIEVEMENT S{s_}"),
+                                       (f"balance_s{s_}", f"BALANCE S{s_}"), (f"status_mesin_s{s_}", f"STATUS MESIN S{s_}")]]
+NEEDS_IMPORT_FIELDS = NEEDS_INT_FIELDS + NEEDS_MESIN_FIELDS
+
+
+def needs_header_map() -> Dict[str, str]:
+    m = {}
+    for k, label in NEEDS_EXPORT_COLS:
+        m[label.lower()] = k
+        m[k] = k
+    m.update({"tanggal produksi": "date", "date": "date", "ics no.": "ics_no", "part number": "ics_no",
+              "plan customer": "plan_customer", "actual customer": "actual_customer",
+              "plan customer assy": "plan_customer", "actual customer assy": "actual_customer"})
+    for s_ in (3, 1, 2):
+        m[f"act s{s_}"] = f"actual_s{s_}"
+    return m
+
+
+def parse_date_cell(v) -> Optional[str]:
+    s_ = str(v or "").strip()
+    if not s_:
+        return None
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}( 00:00:00)?", s_):
+        return s_[:10]
+    if re.fullmatch(r"\d+(\.0)?", s_):
+        n = int(float(s_))
+        if 20000 < n < 80000:
+            return (datetime(1899, 12, 30) + timedelta(days=n)).strftime("%Y-%m-%d")
+        return None
+    try:
+        return pd.to_datetime(s_, dayfirst=True).strftime("%Y-%m-%d")
+    except Exception:
+        return None
+
+
+def parse_ics(v) -> str:
+    s_ = str(v or "").strip()
+    return s_.split(".")[0].zfill(10) if s_.replace(".", "").isdigit() else s_
+
+
+async def analyze_needs_import(file: UploadFile, mode: str):
+    if mode not in ("add", "update"):
+        raise HTTPException(400, "Mode import harus 'add' (Tambah Data) atau 'update' (Update Data)")
+    try:
+        dff = parse_dataframe(await file.read(), file.filename)
+    except Exception as e:
+        raise HTTPException(400, f"Gagal membaca file: {e}")
+    hm = needs_header_map()
+    cols = {c: hm.get(str(c).strip().lower()) for c in dff.columns}
+    found = set(cols.values())
+    missing = [lab for k, lab in (("date", "TANGGAL"), ("ics_no", "ICS NO"), ("type", "TYPE")) if k not in found]
+    if missing:
+        raise HTTPException(400, f"Header wajib tidak ditemukan: {', '.join(missing)}. Gunakan template Kebutuhan Assy.")
+    input_cols = [k for k in NEEDS_IMPORT_FIELDS if k in found]
+    if not input_cols:
+        raise HTTPException(400, "Tidak ada kolom input (PLAN CUSTOMER, ACTUAL CUSTOMER, PLAN/ACTUAL S3/S1/S2, STATUS MESIN) pada file")
+    unknown = [c for c, k in cols.items() if k is None]
+    reference = [c for c, k in cols.items() if k and k not in NEEDS_IMPORT_FIELDS and k not in ("date", "ics_no", "type")]
+    items = {(it.get("ics_no"), it.get("type")) for it in await db.items.find({}, {"ics_no": 1, "type": 1}).to_list(20000)}
+    seen, rows = {}, []
+    for idx, rec in enumerate(dff.to_dict(orient="records")):
+        raw = {k: rec[c] for c, k in cols.items() if k}
+        r = {"row": idx + 2, "date": parse_date_cell(raw.get("date")), "ics_no": parse_ics(raw.get("ics_no")),
+             "type": " ".join(str(raw.get("type") or "").split()), "values": {}, "errors": []}
+        if not r["date"]:
+            r["errors"].append(f"TANGGAL tidak valid ({raw.get('date') or 'kosong'})")
+        if not r["ics_no"] or not r["type"]:
+            r["errors"].append("ICS NO / TYPE wajib diisi")
+        elif (r["ics_no"], r["type"]) not in items:
+            r["errors"].append("ICS NO + TYPE belum terdaftar di Master Item")
+        for k in input_cols:
+            v = raw.get(k)
+            if v is None or str(v).strip() in ("", "-"):
+                continue
+            label = dict(NEEDS_EXPORT_COLS)[k]
+            if k in NEEDS_INT_FIELDS:
+                sv = str(v).strip()
+                if re.fullmatch(r"\d+\.0+", sv):
+                    sv = sv.split(".")[0]
+                try:
+                    r["values"][k] = parse_int_cell(sv)
+                except HTTPException:
+                    r["errors"].append(f"{label} harus angka bulat ≥ 0 ({v})")
+            else:
+                sv = str(v).strip().upper()
+                if sv not in MESIN_OPTIONS:
+                    r["errors"].append(f"{label} harus ON/OFF/DANDORI ({v})")
+                else:
+                    r["values"][k] = sv
+        key = (r["date"], r["ics_no"], r["type"])
+        if not r["errors"]:
+            if key in seen:
+                r["errors"].append(f"Duplikat dalam file (sama dengan baris {seen[key]})")
+            else:
+                seen[key] = r["row"]
+        rows.append(r)
+    valid_keys = [(r["date"], r["ics_no"], r["type"]) for r in rows if not r["errors"]]
+    existing = set()
+    for d_ in {k[0] for k in valid_keys}:
+        for e in await db.needs_entries.find({"date": d_}, {"ics_no": 1, "type": 1}).to_list(20000):
+            existing.add((d_, e.get("ics_no"), e.get("type")))
+    for r in rows:
+        if r["errors"]:
+            r["action"] = "gagal"
+        elif not r["values"]:
+            r["action"] = "dilewati"; r["note"] = "Tidak ada nilai input"
+        elif (r["date"], r["ics_no"], r["type"]) in existing:
+            r["action"] = "diperbarui" if mode == "update" else "dilewati"
+            if mode == "add":
+                r["note"] = "Data sudah ada (mode Tambah Data)"
+        else:
+            r["action"] = "baru"
+    return rows, input_cols, unknown, reference
+
+
+def import_counts(rows):
+    c = {"total": len(rows), "baru": 0, "diperbarui": 0, "dilewati": 0, "gagal": 0}
+    for r in rows:
+        c[r["action"]] += 1
+    return c
+
+
+@api.get("/needs-grid/import/template")
+async def needs_import_template(date: Optional[str] = None, user: dict = Depends(require_perm("production_needs", "read"))):
+    rows = await needs_grid(valid_date(date), user) if date else []
+    wb = Workbook(); ws = wb.active; ws.title = "Kebutuhan Assy"
+    ws.append([lab for _, lab in NEEDS_EXPORT_COLS])
+    for r in rows:
+        ws.append([r.get(k) for k, _ in NEEDS_EXPORT_COLS])
+    for i, (_, lab) in enumerate(NEEDS_EXPORT_COLS, 1):
+        ws.column_dimensions[ws.cell(1, i).column_letter].width = max(10, len(lab) + 2)
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f'attachment; filename="kebutuhan_assy_{date or "template"}.xlsx"'})
+
+
+@api.post("/needs-grid/import/preview")
+async def needs_import_preview(file: UploadFile = File(...), mode: str = Form("update"),
+                               user: dict = Depends(require_perm("production_needs", "write"))):
+    rows, input_cols, unknown, reference = await analyze_needs_import(file, mode)
+    return {"counts": import_counts(rows), "input_columns": input_cols, "unknown_columns": unknown,
+            "reference_columns": reference, "rows": rows[:200], "mode": mode}
+
+
+@api.post("/needs-grid/import/confirm")
+async def needs_import_confirm(request: Request, file: UploadFile = File(...), mode: str = Form("update"),
+                               user: dict = Depends(require_perm("production_needs", "write"))):
+    fname = file.filename
+    rows, _, _, _ = await analyze_needs_import(file, mode)
+    now = datetime.now(timezone.utc).isoformat()
+    for r in rows:
+        if r["action"] not in ("baru", "diperbarui"):
+            continue
+        key = {"date": r["date"], "ics_no": r["ics_no"], "type": r["type"]}
+        sets = {**r["values"], "updated_at": now, "updated_by": user["id"], "updated_by_name": user["name"]}
+        for f in r["values"]:
+            sets[f"{f}_updated_at"] = now; sets[f"{f}_updated_by"] = user["name"]
+        res = await db.needs_entries.find_one_and_update(
+            key, {"$set": sets, "$setOnInsert": {**key, "created_at": now, "created_by": user["id"], "created_by_name": user["name"]}},
+            upsert=True, return_document=True)
+        await log_audit(request, user, "CREATE" if r["action"] == "baru" else "UPDATE", "production_needs", str(res["_id"]),
+                        None, {**key, **r["values"]}, f"Import {fname}")
+    counts = import_counts(rows)
+    if counts["baru"] or counts["diperbarui"]:
+        await notify_users(user, "production_needs", f"Import Kebutuhan Assy: {counts['baru']} baru, {counts['diperbarui']} diperbarui oleh {user['name']} pada {fmt_ts(now)}.")
+    return {"counts": counts, "failed": [r for r in rows if r["action"] == "gagal"][:200]}
+
+
+# ---------------------------------------------------------------------------
 # META options
 # ---------------------------------------------------------------------------
 @api.get("/meta/options")
@@ -1052,135 +1248,134 @@ async def meta_options(user: dict = Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 # DASHBOARD
 # ---------------------------------------------------------------------------
+STATUS_RANK = {"SHORTAGE": 3, "POTENSI SHORTAGE": 2, "TIDAK SHORTAGE": 1, "STD BELUM DISET": 0}
+
+
+def pct_or_none(a, p):
+    return round(a / p * 100, 2) if p else None
+
+
+def achievement_bucket(ach: float) -> str:
+    if ach > 97:
+        return "gt97"
+    if ach > 96:
+        return "b96_97"
+    if ach >= 90:
+        return "mid"
+    return "lt90"
+
+
 @api.get("/dashboard/summary")
 async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[str] = None, product: Optional[str] = None,
                             user: dict = Depends(get_current_user)):
-    dq = build_query({"date_from": date_from, "date_to": date_to})
-    p = {"date_from": date_from, "date_to": date_to}
-    smt = await db.smt_production.find(dq).to_list(10000)
-    needs = await needs_view(p, product)
-    var = await variance_view(p, product)
-
-    stock_dates = await db.smt_stock.distinct("date", dq)
-    stock = await enrich_stock([clean(s) for s in await db.smt_stock.find({"date": max(stock_dates)}).to_list(10000)]) if stock_dates else []
+    rows = await needs_rows_period(date_from, date_to)
+    items = await db.items.find({}, {"type": 1, "group": 1, "ics_no": 1, "product": 1, "ics_name": 1}).to_list(20000)
     if product:
-        pm = await product_map()
-        smt = [x for x in smt if fill_product(x, pm).get("product") == product]
-        stock = [x for x in stock if x.get("product") == product]
+        items = [it for it in items if it.get("product") == product]
+        rows = [r for r in rows if r.get("product") == product]
+    sq = build_query({"date_from": date_from, "date_to": date_to})
+    stocks = await db.smt_stock.find(sq).to_list(200000)
 
-    smt_total = sum(num(x.get("total_act_part")) for x in smt)
-    smt_plan = sum(num(x.get("plan_part")) for x in smt)
-    plan_assy = sum(num(x.get("plan_assy")) for x in smt)
-    assy_total = sum(num(x.get("total_act_assy")) for x in smt)
-    balance = smt_total - assy_total
-    stock_total = sum(num(x.get("total")) for x in stock)
-    stock_ok = stock_total
-    shortage_items = [n for n in needs if n.get("status") == "SHORTAGE"]
-    variance_items = [v for v in var if v.get("variance") not in (None, 0)]
+    # PRODUKSI PART PRODUCTION (Σ PLAN/ACTUAL S3+S1+S2) & LAMP ASSY (PLAN/ACTUAL CUSTOMER)
+    sh = (3, 1, 2)
+    part_plan = sum(num(r.get(f"plan_s{x}")) for r in rows for x in sh)
+    part_act = sum(num(r.get(f"actual_s{x}")) for r in rows for x in sh)
+    assy_plan = sum(num(r.get("plan_customer")) for r in rows)
+    assy_act = sum(num(r.get("actual_customer")) for r in rows)
 
-    # Pencapaian Part Production per TYPE (plan_part = PLAN INJECTION + PLAN EVA; act_part = ACT INJECTION + ACT EVA)
+    # Chart: per tanggal, semua TYPE diakumulasi
+    by_date = {}
+    for r in rows:
+        t = by_date.setdefault(r["date"], {"date": r["date"], "plan": 0.0, "actual": 0.0, "has": False})
+        if r.get("plan_customer") is not None or any(r.get(f"actual_s{x}") is not None for x in sh):
+            t["has"] = True
+        t["plan"] += num(r.get("plan_customer"))
+        t["actual"] += sum(num(r.get(f"actual_s{x}")) for x in sh)
+    trend = [{"date": t["date"], "plan": t["plan"], "actual": t["actual"], "pct": pct_or_none(t["actual"], t["plan"])}
+             for t in sorted(by_date.values(), key=lambda x: x["date"]) if t["has"]]
+    if not (date_from or date_to):
+        trend = trend[-31:]
+
+    # Pencapaian per TYPE unik: total ACTUAL / total PLAN (S3+S1+S2) pada periode
     type_agg = {}
-    for x in smt:
-        a = type_agg.setdefault(x.get("type") or "-", {"plan": 0.0, "act": 0.0})
-        a["plan"] += num(x.get("plan_part")); a["act"] += num(x.get("total_act_part"))
-    cat = {"gt97": [], "mid": [], "lt90": []}
-    for typ, a in type_agg.items():
-        if a["plan"] <= 0:   # type dengan Plan = 0 tidak dikategorikan sebagai 0% otomatis
+    for r in rows:
+        a = type_agg.setdefault(r.get("type") or "-", [0.0, 0.0])
+        a[0] += sum(num(r.get(f"plan_s{x}")) for x in sh)
+        a[1] += sum(num(r.get(f"actual_s{x}")) for x in sh)
+    planned = {t: v for t, v in type_agg.items() if v[0] > 0}
+    buckets = {"gt97": [], "b96_97": [], "mid": [], "lt90": []}
+    for t, (p_, a_) in planned.items():
+        ach = a_ / p_ * 100
+        buckets[achievement_bucket(ach)].append(ach)
+    achievement = {k: {"total_plan": len(planned), "act": len(v), "average": round(sum(v) / len(v), 2) if v else None}
+                   for k, v in buckets.items()}
+
+    # Item Shortage: TOTAL PART = TYPE unik Master Item; status per TYPE = tanggal terakhir (status terburuk bila >1 ICS)
+    master_types = {it.get("type") for it in items if it.get("type")}
+    latest = {}
+    for r in rows:
+        if not r.get("status_part"):
             continue
-        ach = a["act"] / a["plan"] * 100
-        bucket = "gt97" if ach > 97 else ("mid" if ach >= 90 else "lt90")
-        cat[bucket].append((a, ach))
-
-    def cat_summary(lst):
-        return {"total_plan": len(lst), "act": sum(1 for a, _ in lst if a["act"] > 0),
-                "average": round(sum(ac for _, ac in lst) / len(lst), 1) if lst else 0.0}
-
-    # Item Shortage per TYPE unik (SHORTAGE: blc<0 ; POTENSI: aktif & stok masih cukup tapi Waktu Shortage < 8 jam)
-    POTENSI_JAM = 8.0
-    type_sev = {}
-    for n in needs:
-        typ = n.get("type") or "-"
-        blc = num(n.get("blc")); ws = n.get("waktu_shortage")
-        if blc < 0:
-            sev = 2
-        elif n.get("kondisi_produksi") == "ON" and ws is not None and ws < POTENSI_JAM:
-            sev = 1
-        else:
-            sev = 0
-        type_sev[typ] = max(type_sev.get(typ, -1), sev)
+        t = r.get("type")
+        cur = latest.get(t)
+        if not cur or r["date"] > cur[0] or (r["date"] == cur[0] and STATUS_RANK[r["status_part"]] > STATUS_RANK[cur[1]]):
+            latest[t] = (r["date"], r["status_part"])
+    st_vals = [v[1] for t, v in latest.items() if t in master_types]
     shortage = {
-        "total_part": len(type_sev),
-        "tidak_shortage": sum(1 for s in type_sev.values() if s == 0),
-        "potensi_shortage": sum(1 for s in type_sev.values() if s == 1),
-        "shortage": sum(1 for s in type_sev.values() if s == 2),
+        "total_part": len(master_types),
+        "tidak_shortage": st_vals.count("TIDAK SHORTAGE"),
+        "potensi_shortage": st_vals.count("POTENSI SHORTAGE"),
+        "shortage": st_vals.count("SHORTAGE"),
+        "std_belum_diset": st_vals.count("STD BELUM DISET"),
+        "with_status": len(st_vals),
+        "no_status": len(master_types) - len(st_vals),
+        "latest_date": max((v[0] for v in latest.values()), default=None),
     }
 
-    def trend(rows, keys):
-        m = {}
-        for x in rows:
-            t = m.setdefault(x.get("date", ""), {"date": x.get("date", "")})
-            for k, src in keys.items():
-                t[k] = t.get(k, 0) + num(x.get(src))
-        return sorted(m.values(), key=lambda r: r["date"])[-14:]
+    # Top Shortage (BLC): balance terendah, data terakhir per item
+    last_row = {}
+    for r in rows:
+        if r.get("balance") is None:
+            continue
+        k = (r["ics_no"], r["type"])
+        if k not in last_row or r["date"] > last_row[k]["date"]:
+            last_row[k] = r
+    top_shortage = [{"id": f"{r['date']}|{r['id']}", "date": r["date"], "type": r["type"], "ics_no": r["ics_no"],
+                     "ics_name": r.get("ics_name"), "balance": r["balance"], "status_part": r.get("status_part"),
+                     "act_stock": r.get("act_stock"), "plan_customer": r.get("plan_customer")}
+                    for r in sorted(last_row.values(), key=lambda x: x["balance"])[:10]]
 
-    by_lane = {}
-    for x in smt:
-        t = by_lane.setdefault(x.get("lane") or "-", {"lane": x.get("lane") or "-", "injection": 0, "eva": 0, "assy": 0})
-        t["injection"] += num(x.get("act_injection"))
-        t["eva"] += num(x.get("act_eva"))
-        t["assy"] += num(x.get("act_assy"))
-
-    stock_breakdown = [{"name": f"Group {i}", "value": sum(num(x.get(f"group{i}")) for x in stock)} for i in range(1, 7)]
-    stock_breakdown.append({"name": "Part Ragu-ragu", "value": sum(num(x.get("part_ragu")) for x in stock)})
-
-    # Komposisi Stock per GROUP: total type unik (Master Item) & shortage type (status SHORTAGE di Kebutuhan)
-    items_all = await db.items.find({}, {"type": 1, "group": 1, "ics_no": 1}).to_list(20000)
-    grp_total = {f"GROUP {i}": set() for i in range(1, 7)}
-    type_group = {}
-    for it in items_all:
-        g = (it.get("group") or "").strip()
-        type_group[(it.get("ics_no"), it.get("type"))] = g
-        if g in grp_total:
-            grp_total[g].add(it.get("type"))
-    grp_short = {f"GROUP {i}": set() for i in range(1, 7)}
-    for n in needs:
-        if n.get("status") == "SHORTAGE":
-            g = type_group.get((n.get("ics_no"), n.get("type")), "")
-            if g in grp_short:
-                grp_short[g].add(n.get("type"))
-    group_composition = [{"group": f"GROUP {i}", "total_type": len(grp_total[f"GROUP {i}"]),
-                          "shortage_type": len(grp_short[f"GROUP {i}"])} for i in range(1, 7)]
-
-    part_trend = trend(smt, {"plan": "plan_part", "actual": "total_act_part", "plan_assy": "plan_assy", "actual_assy": "total_act_assy"})
-    for e in part_trend:
-        e["pct"] = round(e["actual"] / e["plan"] * 100, 1) if e.get("plan") else 0.0
+    # Komposisi Stock Part per GROUP (Master Item) dari Stock Part Production: record terbaru per item
+    shift_ord = {"SHIFT 3": 0, "SHIFT 1": 1, "SHIFT 2": 2}
+    item_group = {(it.get("ics_no"), it.get("type")): (it.get("group") or "").strip() for it in items}
+    latest_stock = {}
+    for st in stocks:
+        k = (st.get("ics_no"), st.get("type"))
+        if k not in item_group:
+            continue
+        o = (st.get("date") or "", shift_ord.get(st.get("shift"), -1))
+        if k not in latest_stock or o > latest_stock[k][0]:
+            latest_stock[k] = (o, num(st.get("total")))
+    short_types = {t for t, v in latest.items() if v[1] == "SHORTAGE"}
+    groups_found = sorted({g for g in item_group.values() if g}, key=lambda g: (len(g), g)) or [f"GROUP {i}" for i in range(1, 7)]
+    group_composition = []
+    for g in groups_found:
+        keys = [k for k, v in latest_stock.items() if item_group.get(k) == g]
+        types = {k[1] for k in keys}
+        group_composition.append({"group": g, "total_type": len(types), "total_stock": sum(latest_stock[k][1] for k in keys),
+                                  "shortage_type": len(types & short_types)})
 
     return {
-        "kpi": {
-            "smt_total": smt_total, "smt_items": len(smt), "smt_plan": smt_plan,
-            "smt_achievement": round(smt_total / smt_plan * 100, 1) if smt_plan else 0.0,
-            "plan_assy": plan_assy, "assy_total": assy_total, "balance": balance,
-            "assy_achievement": round(assy_total / plan_assy * 100, 1) if plan_assy else 0.0,
-            "stock_ok": stock_ok, "stock_total": stock_total, "stock_items": len(stock),
-            "stock_date": max(stock_dates) if stock_dates else None,
-            "shortage_count": len(shortage_items), "needs_items": len(needs),
-            "variance_count": len(variance_items), "variance_items": len(var),
-            "variance_sum": sum(num(v.get("variance")) for v in var),
-        },
         "resume": {
-            "part_production": {"total_plan": r1(smt_plan), "act_prod": r1(smt_total),
-                                "pct": round(smt_total / smt_plan * 100, 1) if smt_plan else 0.0},
-            "lamp_assy": {"total_plan": r1(plan_assy), "act_prod": r1(assy_total),
-                          "pct": round(assy_total / plan_assy * 100, 1) if plan_assy else 0.0},
+            "part_production": {"total_plan": part_plan, "act_prod": part_act, "pct": pct_or_none(part_act, part_plan)},
+            "lamp_assy": {"total_plan": assy_plan, "act_prod": assy_act, "pct": pct_or_none(assy_act, assy_plan)},
             "shortage": shortage,
-            "achievement": {"gt97": cat_summary(cat["gt97"]), "mid": cat_summary(cat["mid"]), "lt90": cat_summary(cat["lt90"])},
+            "achievement": achievement,
         },
-        "stock_breakdown": stock_breakdown,
         "group_composition": group_composition,
-        "smt_trend": part_trend,
-        "smt_by_lane": sorted(by_lane.values(), key=lambda r: r["lane"]),
-        "top_shortage": sorted(shortage_items, key=lambda n: n["blc"])[:6],
-        "top_variance": sorted(variance_items, key=lambda v: abs(num(v.get("variance"))), reverse=True)[:6],
+        "smt_trend": trend,
+        "top_shortage": top_shortage,
+        "period": {"date_from": date_from, "date_to": date_to, "rows": len(rows)},
     }
 
 
@@ -1204,12 +1399,30 @@ def header_map(module: str) -> Dict[str, str]:
     return m
 
 
+def decode_text(b: bytes) -> str:
+    for enc in ("utf-8-sig", "cp1252", "latin-1"):
+        try:
+            return b.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return b.decode("utf-8", errors="replace")
+
+
+COMPUTED_KEYS = {"cap_h", "total", "status", "total_act_part", "total_act_assy", "plan_part", "achievement", "balance"}
+
+
 def parse_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:
-    if filename.lower().endswith(".csv"):
-        dff = pd.read_csv(io.BytesIO(file_bytes), dtype=str)
+    name = (filename or "").lower()
+    if name.endswith(".csv") or name.endswith(".txt"):
+        dff = pd.read_csv(io.StringIO(decode_text(file_bytes)), dtype=str, sep=None, engine="python")
+    elif name.endswith((".xlsx", ".xlsm", ".xls")):
+        dff = pd.read_excel(io.BytesIO(file_bytes), dtype=str, engine="xlrd" if name.endswith(".xls") else None)
     else:
-        dff = pd.read_excel(io.BytesIO(file_bytes), dtype=str)
-    dff = dff.dropna(how="all")
+        raise ValueError("Format file harus .xlsx, .xls, atau .csv")
+    dff.columns = [" ".join(str(c).replace("\xa0", " ").split()) for c in dff.columns]
+    dff = dff.loc[:, [not str(c).lower().startswith("unnamed") for c in dff.columns]]
+    dff = dff.map(lambda v: v.replace("\xa0", " ").strip() if isinstance(v, str) else v)
+    dff = dff.replace("", None).dropna(how="all")
     return dff.astype(object).where(pd.notnull(dff), None)
 
 
@@ -1231,7 +1444,10 @@ def map_rows(module: str, dff: pd.DataFrame):
         if r.get("ics_no"):
             s = str(r["ics_no"]).strip()
             r["ics_no"] = s.split(".")[0].zfill(10) if s.replace(".", "").isdigit() else s
-        rows.append(normalize(module, r))
+        try:
+            rows.append(normalize(module, r))
+        except HTTPException as e:
+            rows.append({**r, "_error": e.detail})
     return rows, unknown
 
 
@@ -1240,6 +1456,8 @@ def import_row_valid(dataset: str, r: dict) -> bool:
     - dataset dengan 'key' (mis. stock-standards: lane+product+type) → cek key tsb, TIDAK butuh ics_no.
     - dataset lain → butuh ics_no, dan butuh date kecuali no_date.
     """
+    if r.get("_error"):
+        return False
     ck = DATASETS[dataset].get("key")
     if ck:
         return all(str(r.get(k) or "").strip() for k in ck)
@@ -1306,11 +1524,16 @@ async def import_confirm(dataset: str, request: Request, file: UploadFile = File
         rows, _ = map_rows(module, dff)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Gagal membaca file: {e}")
+    hm = header_map(module)
+    present = {hm.get(str(c).strip().lower()) for c in dff.columns} - {None, "__skip__"}
     now = datetime.now(timezone.utc).isoformat()
     inserted = updated = skipped = 0
     no_date = DATASETS[dataset].get("no_date")
     for r in rows:
         ck = DATASETS[dataset].get("key")
+        if r.get("_error"):
+            skipped += 1
+            continue
         if ck:
             if not all(r.get(k) for k in ck):
                 skipped += 1
@@ -1325,8 +1548,10 @@ async def import_confirm(dataset: str, request: Request, file: UploadFile = File
                 key["shift"] = r.get("shift", "")
         existing = await db[module].find_one(key)
         if existing:
+            merged = normalize(module, {**existing, **{k: v for k, v in r.items() if k in present}})
+            r = {k: v for k, v in merged.items() if k in present or k not in existing or k in COMPUTED_KEYS}
             stamp(r, user, False)
-            await db[module].update_one(key, {"$set": r}); updated += 1
+            await db[module].update_one({"_id": existing["_id"]}, {"$set": r}); updated += 1
             after = clean(await db[module].find_one({"_id": existing["_id"]}))
             await log_audit(request, user, "UPDATE", module, after["id"], clean(existing), after, f"Import {file.filename}")
         else:

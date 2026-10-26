@@ -25,8 +25,7 @@ const COLUMNS = [
     { key: "total", label: "Total Stock Hari Ini", type: "strong", align: "right", sum: true },
     { key: "std_stock_min", label: "Std Min", type: "number", align: "right", na: "-" },
     { key: "std_stock_max", label: "Std Max", type: "number", align: "right", na: "-" },
-    { key: "indikator", label: "Indikator", type: "status" },
-    { key: "status", label: "Status", type: "status" },
+    { key: "status_part", label: "Status Part", type: "status" },
   ];
 
 export default function SMTStock() {

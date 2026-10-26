@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import api, { canWrite, fmtNum, formatApiErrorDetail } from "@/lib/api";
+import api, { canWrite, fmtNum, fmtPct2, formatApiErrorDetail } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ExcelGrid from "@/components/ExcelGrid";
-import { ClipboardList, Download, RefreshCw, Search, Loader2 } from "lucide-react";
+import NeedsImportDialog from "@/components/NeedsImportDialog";
+import { ClipboardList, Download, RefreshCw, Search, Loader2, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ALL = "__all__";
@@ -27,6 +28,8 @@ const MESIN_FILL = {
 
 const signed = (v) => (v === null || v === undefined ? <span className="text-muted-foreground">-</span>
   : <span className={cn(v < 0 ? "text-red-600 font-semibold" : v > 0 ? "text-emerald-700 dark:text-emerald-400" : "")}>{fmtNum(v)}</span>);
+const achv = (v) => (v === null || v === undefined ? <span className="text-muted-foreground">-</span>
+  : <span className={cn("font-semibold", v > 97 ? "text-emerald-700 dark:text-emerald-400" : v >= 90 ? "text-amber-600" : "text-red-600")}>{fmtPct2(v)}</span>);
 const dash = (v) => (v === null || v === undefined || v === "" ? <span className="text-muted-foreground">-</span> : v);
 const master = (k, num) => ({ key: k, render: (r) => dash(num ? (r[k] === null || r[k] === undefined ? null : fmtNum(r[k])) : r[k]) });
 const canEdit = (r) => r.master_found;
@@ -34,6 +37,7 @@ const canEdit = (r) => r.master_found;
 const shiftCols = (s) => [
   { key: `plan_s${s}`, label: `PLAN S${s}`, width: 78, align: "right", edit: "int", canEdit, sum: true },
   { key: `actual_s${s}`, label: `ACTUAL S${s}`, width: 84, align: "right", edit: "int", canEdit, sum: true },
+  { key: `achievement_s${s}`, label: `ACHIEVEMENT S${s}`, width: 104, align: "right", render: (r) => achv(r[`achievement_s${s}`]) },
   { key: `balance_s${s}`, label: `BALANCE S${s}`, width: 90, align: "right", render: (r) => signed(r[`balance_s${s}`]), sum: true },
   { key: `status_mesin_s${s}`, label: `STATUS MESIN S${s}`, width: 118, align: "center", edit: "select", options: MESIN, canEdit,
     cellClass: (r) => MESIN_FILL[r[`status_mesin_s${s}`]] },
@@ -52,6 +56,7 @@ const COLUMNS = [
   { ...master("std_stock_max", true), label: "STD STOCK MAX", width: 90, align: "right" },
   { ...master("act_stock", true), label: "ACT STOCK\nJAM 01:00", width: 100, align: "right", sum: true, headerClass: "bg-sky-100 dark:bg-sky-500/20" },
   { key: "plan_customer", label: "PLAN CUSTOMER\n(ASSY)", width: 112, align: "right", edit: "int", canEdit, sum: true },
+  { key: "actual_customer", label: "ACTUAL CUSTOMER\n(ASSY)", width: 112, align: "right", edit: "int", canEdit, sum: true },
   { key: "balance", label: "BALANCE", width: 92, align: "right", render: (r) => signed(r.balance), sum: true },
   { key: "level_stock", label: "LEVEL STOCK\n(DAY)", width: 92, align: "right", render: (r) => dash(r.level_stock === null || r.level_stock === undefined ? null : new Intl.NumberFormat("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(r.level_stock)) },
   { key: "status_part", label: "STATUS PART", width: 140, align: "center", cellClass: (r) => STATUS_FILL[r.status_part], render: (r) => dash(r.status_part) },
@@ -60,10 +65,10 @@ const COLUMNS = [
 
 const GROUPS = [
   { label: "IDENTITAS ITEM · MASTER ITEM", span: 10 },
-  { label: "STOCK VS KEBUTUHAN ASSY", span: 5, className: "bg-sky-100 dark:bg-sky-500/20" },
-  { label: "SHIFT 3", span: 4, className: "bg-indigo-100 dark:bg-indigo-500/20" },
-  { label: "SHIFT 1", span: 4, className: "bg-emerald-100 dark:bg-emerald-500/20" },
-  { label: "SHIFT 2", span: 4, className: "bg-amber-100 dark:bg-amber-500/20" },
+  { label: "STOCK VS KEBUTUHAN ASSY", span: 6, className: "bg-sky-100 dark:bg-sky-500/20" },
+  { label: "SHIFT 3", span: 5, className: "bg-indigo-100 dark:bg-indigo-500/20" },
+  { label: "SHIFT 1", span: 5, className: "bg-emerald-100 dark:bg-emerald-500/20" },
+  { label: "SHIFT 2", span: 5, className: "bg-amber-100 dark:bg-amber-500/20" },
 ];
 
 const FILTERS = [["product", "Product"], ["lane", "Lane"], ["proses_mesin", "Proses Mesin"], ["group", "Group"], ["status_part", "Status Part"]];
@@ -114,11 +119,13 @@ export default function ProductionNeeds() {
   }, [rows, f, search]);
   const counts = useMemo(() => view.reduce((a, r) => { if (r.status_part) a[r.status_part] = (a[r.status_part] || 0) + 1; return a; }, {}), [view]);
 
-  const exportCsv = () => {
-    const head = COLUMNS.map((c) => `"${c.label.replace("\n", " ")}"`).join(",");
-    const body = view.map((r) => COLUMNS.map((c) => `"${r[c.key] ?? ""}"`).join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([`${head}\n${body}`], { type: "text/csv" }));
-    const a = document.createElement("a"); a.href = url; a.download = `kebutuhan-assy-${date}.csv`; a.click(); URL.revokeObjectURL(url);
+  const [importOpen, setImportOpen] = useState(false);
+  const exportXlsx = async () => {
+    try {
+      const res = await api.get("/needs-grid/import/template", { params: { date }, responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a"); a.href = url; a.download = `kebutuhan_assy_${date}.xlsx`; a.click(); URL.revokeObjectURL(url);
+    } catch { toast.error("Gagal export Excel"); }
   };
 
   return (
@@ -128,12 +135,13 @@ export default function ProductionNeeds() {
           <div className="w-11 h-11 rounded-lg bg-primary/10 border border-primary/25 flex items-center justify-center"><ClipboardList className="w-5 h-5 text-primary" /></div>
           <div>
             <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight">Kebutuhan Assy VS. Stock Part Production</h1>
-            <p className="text-sm text-muted-foreground mt-0.5 max-w-4xl">BALANCE = (ACT STOCK JAM 01:00 − PLAN CUSTOMER) + ACTUAL S3 + S1 + S2 · LEVEL STOCK = ACT STOCK ÷ STD STOCK MAX · STATUS PART: ≤ 0 SHORTAGE · ≤ MID POTENSI SHORTAGE · &gt; MID TIDAK SHORTAGE (MID = (MIN + MAX) ÷ 2)</p>
+            <p className="text-sm text-muted-foreground mt-0.5 max-w-4xl">BALANCE = (ACT STOCK JAM 01:00 − PLAN CUSTOMER) + ACTUAL S3 + S1 + S2 · ACHIEVEMENT Sx = ACTUAL ÷ PLAN × 100% · LEVEL STOCK = ACT STOCK ÷ STD STOCK MAX · STATUS PART: ≤ 0 SHORTAGE · ≤ MID POTENSI SHORTAGE · &gt; MID TIDAK SHORTAGE (MID = (MIN + MAX) ÷ 2)</p>
           </div>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={load} data-testid="needs-reload-button"><RefreshCw className="w-4 h-4 mr-1.5" /> Muat ulang</Button>
-          <Button variant="outline" size="sm" onClick={exportCsv} data-testid="needs-export-button"><Download className="w-4 h-4 mr-1.5" /> Export</Button>
+          {writable && <Button size="sm" onClick={() => setImportOpen(true)} data-testid="needs-import-button"><Upload className="w-4 h-4 mr-1.5" /> Import Excel</Button>}
+          <Button variant="outline" size="sm" onClick={exportXlsx} data-testid="needs-export-button"><Download className="w-4 h-4 mr-1.5" /> Export Excel</Button>
         </div>
       </div>
 
@@ -164,6 +172,7 @@ export default function ProductionNeeds() {
         <ExcelGrid testId="needs-grid" columns={COLUMNS} groups={GROUPS} rows={view} rowKey={(r) => r.id} onSave={onSave} editable={writable}
           info={writable ? "Klik cell putih lalu ketik angka · Enter simpan & turun · Tab simpan & ke kanan · Panah pindah cell · Esc batal · ACT STOCK = TOTAL STOCK HARI INI SHIFT 3" : "Mode lihat saja"} />
       )}
+      <NeedsImportDialog open={importOpen} onOpenChange={setImportOpen} date={date} onDone={load} />
     </div>
   );
 }

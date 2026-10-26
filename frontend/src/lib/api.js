@@ -47,4 +47,7 @@ export const fmtNum = (v) =>
 export const fmtPct = (v) =>
   v === null || v === undefined || isNaN(Number(v)) ? "-" : `${Number(v).toFixed(1)}%`;
 
+export const fmtPct2 = (v) =>
+  v === null || v === undefined || isNaN(Number(v)) ? "-" : `${new Intl.NumberFormat("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v))}%`;
+
 export default api;
