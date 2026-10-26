@@ -91,8 +91,8 @@ export default function Dashboard() {
   const [products, setProducts] = useState([]);
   useEffect(() => { api.get("/meta/options").then((r) => setProducts(r.data.products || [])).catch(() => {}); }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const params = {};
       if (range.date_from) params.date_from = range.date_from;
@@ -100,12 +100,21 @@ export default function Dashboard() {
       if (range.product) params.product = range.product;
       const { data } = await api.get("/dashboard/summary", { params });
       setData(data);
+    } catch {
+      if (!silent) setData(null);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [range]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const t = setInterval(() => load(true), 30000);
+    const onVis = () => { if (document.visibilityState === "visible") load(true); };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onVis);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVis); window.removeEventListener("focus", onVis); };
+  }, [load]);
 
   if (loading || !data)
     return <div className="flex items-center justify-center py-32"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
@@ -216,14 +225,14 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-4">
         <Panel icon={AlertTriangle} title="Top Shortage (BLC)" tone="text-red-600">
           {data.top_shortage.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">Belum ada data BALANCE pada periode ini</p>
+            <p className="text-sm text-muted-foreground py-4 text-center" data-testid="top-shortage-empty">Tidak ada item SHORTAGE (BALANCE ≤ 0) pada periode ini</p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
               {data.top_shortage.map((n) => (
                 <div key={n.id} className="flex items-center justify-between border-b border-border/50 py-2" data-testid={`top-shortage-${n.type}`}>
                   <div>
                     <p className="text-sm text-foreground font-medium">{n.type}{n.ics_name ? <span className="text-muted-foreground font-normal"> · {n.ics_name}</span> : null}</p>
-                    <p className="text-[11px] font-mono-data text-muted-foreground">{n.date} · {n.ics_no} · Plan {fmtNum(n.plan_customer)} · Stock {n.act_stock === null ? "-" : fmtNum(n.act_stock)} · {n.status_part || "-"}</p>
+                    <p className="text-[11px] font-mono-data text-muted-foreground">{n.date} · {n.product || "-"} · {n.ics_no} · Plan {fmtNum(n.plan_customer)} · Stock {n.act_stock === null ? "-" : fmtNum(n.act_stock)} · {n.status_part || "-"}</p>
                   </div>
                   <span className={cn("font-mono-data text-sm font-bold", n.balance < 0 ? "text-red-600" : n.balance === 0 ? "text-amber-500" : "text-emerald-600")}>{fmtNum(n.balance)}</span>
                 </div>

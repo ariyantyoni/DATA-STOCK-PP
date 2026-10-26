@@ -1271,7 +1271,8 @@ def achievement_bucket(ach: float) -> str:
 @api.get("/dashboard/summary")
 async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[str] = None, product: Optional[str] = None,
                             user: dict = Depends(get_current_user)):
-    rows = await needs_rows_period(date_from, date_to)
+    all_rows = await needs_rows_period(date_from, date_to)
+    rows = [r for r in all_rows if r.get("master_found")]
     items = await db.items.find({}, {"type": 1, "group": 1, "ics_no": 1, "product": 1, "ics_name": 1}).to_list(20000)
     if product:
         items = [it for it in items if it.get("product") == product]
@@ -1343,10 +1344,10 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
         k = (r["ics_no"], r["type"])
         if k not in last_row or r["date"] > last_row[k]["date"]:
             last_row[k] = r
-    top_shortage = [{"id": f"{r['date']}|{r['id']}", "date": r["date"], "type": r["type"], "ics_no": r["ics_no"],
-                     "ics_name": r.get("ics_name"), "balance": r["balance"], "status_part": r.get("status_part"),
+    top_shortage = [{"id": f"{r['date']}|{r['id']}", "date": r["date"], "type": r["type"], "ics_no": r["ics_no"], "product": r.get("product"),
+                     "lane": r.get("lane"), "ics_name": r.get("ics_name"), "balance": r["balance"], "status_part": r.get("status_part"),
                      "act_stock": r.get("act_stock"), "plan_customer": r.get("plan_customer")}
-                    for r in sorted(last_row.values(), key=lambda x: x["balance"])[:10]]
+                    for r in sorted((x for x in last_row.values() if x["balance"] <= 0), key=lambda x: x["balance"])[:10]]
 
     # Komposisi Stock Part per GROUP (Master Item) dari Stock Part Production: record terbaru per item
     shift_ord = {"SHIFT 3": 0, "SHIFT 1": 1, "SHIFT 2": 2}
@@ -1360,7 +1361,7 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
         if k not in latest_stock or o > latest_stock[k][0]:
             latest_stock[k] = (o, num(st.get("total")))
     short_types = {t for t, v in latest.items() if v[1] == "SHORTAGE"}
-    groups_found = sorted({g for g in item_group.values() if g}, key=lambda g: (len(g), g)) or [f"GROUP {i}" for i in range(1, 7)]
+    groups_found = sorted({f"GROUP {i}" for i in range(1, 7)} | {g for g in item_group.values() if g}, key=lambda g: (len(g), g))
     group_composition = []
     for g in groups_found:
         keys = [k for k, v in latest_stock.items() if item_group.get(k) == g]
@@ -1378,7 +1379,8 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
         "group_composition": group_composition,
         "smt_trend": trend,
         "top_shortage": top_shortage,
-        "period": {"date_from": date_from, "date_to": date_to, "rows": len(rows)},
+        "period": {"date_from": date_from, "date_to": date_to, "rows": len(rows), "excluded_no_master": len(all_rows) - len(rows),
+                   "generated_at": datetime.now(timezone.utc).isoformat()},
     }
 
 
