@@ -7,7 +7,7 @@ import CrudPage from "@/components/CrudPage";
 import { useMetaOptions } from "@/hooks/useMetaOptions";
 import { Boxes } from "lucide-react";
 
-const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
 const SHIFTS = ["SHIFT 3", "SHIFT 1", "SHIFT 2"];
 
 const COLUMNS = [
@@ -30,7 +30,7 @@ const COLUMNS = [
     { key: "total", label: "Total Stock Hari Ini", type: "strong", align: "right", sum: true },
     { key: "std_stock_min", label: "Std Min", type: "number", align: "right", na: "-" },
     { key: "std_stock_max", label: "Std Max", type: "number", align: "right", na: "-" },
-    { key: "status_part", label: "Status Part", type: "status" },
+    { key: "status_part", label: "Status Part", type: "status", width: 160 },
   ];
 
 const todayWib = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });

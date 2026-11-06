@@ -60,6 +60,12 @@ def seed(admin):
     for d, sh, k, tot in stocks:
         r = admin.post(f"{API}/smt-stock", json={"date": d, "shift": sh, "lane": "ZT9", "product": PROD, "type": TYP[k], "ics_no": ICS[k], "group1": tot})
         assert r.status_code == 200, r.text
+    # iter11: ACT STOCK D = TOTAL SHIFT 2 of D-1 -> mirror each SHIFT 3 seed to SHIFT 2 of the previous day
+    prev = {D2: D1, D1: "2031-02-28"}
+    for d, sh, k, tot in stocks:
+        if sh == "SHIFT 3":
+            r = admin.post(f"{API}/smt-stock", json={"date": prev[d], "shift": "SHIFT 2", "lane": "ZT9", "product": PROD, "type": TYP[k], "ics_no": ICS[k], "group1": tot})
+            assert r.status_code == 200, r.text
     needs = [
         (D2, "A1", dict(plan_customer=1000, actual_customer=950, plan_s3=1000, actual_s3=980)),
         (D2, "A1b", dict(plan_customer=2000)),
@@ -254,13 +260,13 @@ class TestNeedsImport:
 class TestStockStatusPart:
     def test_status_part_matches_needs(self, admin):
         rows = [x for x in admin.get(f"{API}/smt-stock", params={"date_from": D1, "date_to": "2031-03-05"}).json() if x["ics_no"] in ALL_ICS]
-        assert len(rows) == 12
+        assert len(rows) == 21  # 12 + 9 SHIFT 2 mirrors on D1
         for x in rows:
             if x["date"] == "2031-03-05":
                 assert x["status_part"] == "BELUM TERSEDIA"
                 continue
             k = [kk for kk, v in ICS.items() if v == x["ics_no"]][0]
-            assert x["status_part"] == grow(admin, x["date"], k)["status_part"], (k, x["date"])
+            assert x["status_part"] == (grow(admin, x["date"], k)["status_part"] or "BELUM TERSEDIA"), (k, x["date"])
         e = [x for x in rows if x["ics_no"] == ICS["E"]][0]
         assert e["status_part"] == "SHORTAGE"
 

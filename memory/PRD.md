@@ -88,6 +88,15 @@ Aplikasi web profesional untuk Control Data Stock & Production di perusahaan man
 - Dashboard auto-refresh senyap tiap 30 dtk + saat tab/jendela aktif; sumbu % chart dinamis (min 130%).
 - Teruji iteration_10: 18/18 skenario KPI + rekonsiliasi pymongo independen, 64/64 regresi, UI cocok dengan API.
 
+
+## Implemented (2026-06, iterasi 12) — Shift 2 sync, periode, auto-generate, checklist delete, freeze panes
+- ACT STOCK JAM 01:00 (tgl D) = TOTAL STOCK SHIFT 2 tgl D−1 (act_stock_by_date). Baris stok kosong (semua input null) → total null, ACT STOCK "-".
+- Kebutuhan: filter DARI/SAMPAI TANGGAL (maks 31 hari, default hari ini WIB), filter GROUP (master_groups), RESET FILTER; id baris "date|ics|type"; grid virtualized.
+- Auto generate harian 00:01 WIB: .emergent/crons.yml → POST /api/cron/daily-generate (WEBHOOK_CRON_SECRET, idempoten run_id di cron_runs) → 618 item × 3 shift upsert $setOnInsert; log di generate_logs; index unik uniq_stock_key. Tombol Generate Harian (admin) POST /api/smt-stock/generate.
+- Hapus checklist: Stock POST /api/smt-stock/bulk-delete; Kebutuhan POST /api/needs-grid/clear (mengosongkan input). Dialog CANCEL / CONFIRM DELETE + jumlah.
+- Filter GROUP di Stock Part Production; default filter tanggal hari ini; freeze panes s/d PROSES MESIN + header sticky di Stock & Kebutuhan.
+- Teruji iteration_11: 107/107 backend (iter8–11), frontend semua flow lulus; fix form stok kosong → null.
+
 ## Backlog / Remaining
 - P1: Import Excel untuk grid Kebutuhan (PLAN CUSTOMER/PLAN/ACTUAL).
 - P2: Export Excel dengan layout asli DATA STOCK; brute-force lockout; password reset; split server.py.

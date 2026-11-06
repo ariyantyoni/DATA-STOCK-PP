@@ -1,0 +1,53 @@
+{
+  "summary": "Iteration 11 testing of the PART PRODUCTION F1 revision, backend and frontend. Backend: new test_iter11_period_generate_bulk.py has 25 tests and all pass. I updated the iter8/9/10 regression tests to the new rules (ACT STOCK = SHIFT 2 of D-1, row id 'date|ics|type'). All 107 tests in iter8-11 pass with -n 0. Frontend: everything tested on Kebutuhan and Stock Part Production works with Playwright: freeze panes, virtualization, keyboard edit of far rows (row 300 on Kebutuhan, row 900 on Stock), period/group filters, RESET FILTER, checklist delete (cancel and confirm), the Generate Harian dialog, and read-only mode for assy. One functional bug found: saving a stock row through the add/edit form with blank group inputs stores 0 instead of null. That makes ACT STOCK 0 and STATUS PART a false SHORTAGE.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/smt-stock and PUT /api/smt-stock/{id}", "issue": "normalize() turns blank group1..group6/part_ragu into num(None)=0.0, so compute_smt_stock never sees all inputs as None and total becomes 0.0 instead of null. Reproduced: PUT on a generated empty SHIFT 2 row of 2033-01-20 with only date/shift/lane/product/type/ics_no gave total 0.0. Kebutuhan 2033-01-21 then showed act_stock 0 and status_part SHORTAGE (should be null and '-'). POST with blank inputs also gives total 0.0. Only inline cell PATCH keeps null correctly."},
+      {"endpoint": "GET /api/dashboard/summary (top_shortage)", "issue": "id is f\"{r['date']}|{r['id']}\" but needs_row id now already starts with the date, giving 'date|date|ics|type'. Only cosmetic (React key), but it should use r['id']."},
+      {"endpoint": "PATCH /api/needs-grid/cell", "issue": "Still calls the helper with the old name shift3_stock_map, which now returns SHIFT 2 of D-1. The logic is correct; only the name is misleading."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Stock Part Production grid", "issues": ["The STATUS PART column is too narrow, so the badge is cut to 'BELUM TERSE...'."]},
+      {"screen": "Kebutuhan / Stock / Dashboard / Generate dialog", "issues": ["Date filters use the browser's native <input type=date> instead of a shadcn Calendar/Popover picker. This was the existing pattern."]},
+      {"screen": "SMTStock form", "issues": ["The default date in the add form uses the browser's local timezone (today()), not WIB like the filters (todayWib)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter11_period_generate_bulk.py",
+    "/app/backend/tests/test_iter8_needs_grid.py",
+    "/app/backend/tests/test_iter9_import_dashboard.py",
+    "/app/backend/tests/test_iter10_dashboard_kpi.py",
+    "/app/backend/tests/seed_iter11_ui.py",
+    "/app/test_reports/pytest/pytest_iter11.xml"
+  ],
+  "action_items": [
+    "In normalize() for smt_stock, keep blank STOCK_INPUTS as None (not 0) so form create/edit of an empty row keeps total=null and act_stock '-'. Or make compute_smt_stock look at the raw body.",
+    "Fix the dashboard top_shortage id so it is not 'date|date|ics|type' (use r['id']).",
+    "Optional: widen the STATUS PART column in the Stock grid, use todayWib for the form's default date, and rename shift3_stock_map."
+  ],
+  "critical_code_review_comments": [
+    "server.py is about 2060 lines, which is too big; split it into routers (needs, stock, generate/cron, dashboard).",
+    "needs_grid_clear runs find_one_and_delete plus an audit insert once per row (up to 50000 rows). Very large selections will be slow; use a delete_many plus a bulk audit insert.",
+    "smt_stock_bulk_delete silently skips invalid ObjectIds (selected vs deleted counts are returned, which is fine).",
+    "Cron: run_id defaults to 'manual-<timestamp>' when there is no X-Webhook-Id, so every call without that header triggers a new run. That is acceptable because generation is idempotent.",
+    "Old tests test_iter6_prod_stock_backup.py etc. are outdated (KeyError 'total_act_smt', from previous refactors). They were not part of this scope; I did not run them further."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter11_period_generate_bulk.py (new)",
+    "/app/backend/tests/seed_iter11_ui.py (new)",
+    "/app/backend/tests/test_iter8_needs_grid.py (ACT STOCK seed now SHIFT 2 of D-1 with distractors; id 'date|ics|type')",
+    "/app/backend/tests/test_iter9_import_dashboard.py (SHIFT 2 D-1 copies of each SHIFT 3 seed; stock count 21; status_part compare uses 'BELUM TERSEDIA' fallback)",
+    "/app/backend/tests/test_iter10_dashboard_kpi.py (SHIFT 2 D-1 copies; A89 decoy row changed to SHIFT 1; reference impl uses SHIFT 2 of D-1; shortage patches target the S1 D1 SHIFT 2 row)"
+  ],
+  "success_rate": {"backend": "100% (107/107 for iter8-11; 1 minor bug found outside the tests)", "frontend": "100% of flows tested"},
+  "seed_data_creation": "Temporary ZT11/ZTUI items (9900001101-03, 9900001201-03), stock rows on 2033-xx dates, generated rows for 2033-01-10 and 2033-01-20, and one plan_customer=123 edit on today's row 8505701400/HL 2SJ. All removed afterwards. Final DB state: smt_stock 1854 rows (all 2026-11-06, no duplicates, all still empty), needs_entries 0, items 618, generate_logs 2, cron_runs 1 (the main agent's originals). Audit_log entries from the tests remain.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: REACT_APP_BACKEND_URL=... pytest tests/test_iter11_period_generate_bulk.py tests/test_iter8_needs_grid.py tests/test_iter9_import_dashboard.py tests/test_iter10_dashboard_kpi.py -n 0. The tests clean up after themselves (by ics_no and by date 2033-01-10). The cron test triggers generation for today's WIB date (idempotent) and deletes its own cron_runs/generate_logs records by run_id. For UI seed data use tests/seed_iter11_ui.py seed|clean (date 2033-03-05, group ZTGRPUI). Grid testids: needs-grid-scroll / inline-grid-scroll, cell-{ri}-{key}, grid-select-{ri}, data-frozen='1'. The grid is virtualized, so off-screen rows are not in the DOM.",
+  "rca of the issue": "Blank stock form values become 0: normalize() in server.py loops over FIELDS and, for numeric fields, calls num(v), which returns 0.0 for None or ''. compute_smt_stock then sees 0.0 values instead of None, so it returns total 0 and status KOSONG. Repro: PUT /api/smt-stock/{generated_row_id} with only the identity fields, or POST with blank groups, gives total 0.0. GET /api/needs-grid for D+1 then shows act_stock 0 and status_part SHORTAGE. Mitigation: in normalize, for module smt_stock, map blank or missing STOCK_INPUTS to None before calling compute."
+}

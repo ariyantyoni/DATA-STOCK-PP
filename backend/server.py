@@ -355,6 +355,8 @@ def normalize(module: str, body: dict) -> dict:
     for key, _label, is_num in FIELDS[module]:
         v = body.get(key)
         d[key] = num(v) if is_num else ("" if v is None or str(v) == "nan" else " ".join(str(v).split()))
+        if module == "smt_stock" and key in STOCK_INPUTS and (v is None or str(v).strip() in ("", "nan", "-")):
+            d[key] = None
     if d.get("ics_no", "").isdigit():
         d["ics_no"] = d["ics_no"].zfill(10)
     if module == "items":
@@ -945,7 +947,7 @@ async def act_stock_by_date(q: dict) -> dict:
     return out
 
 
-async def shift3_stock_map(date: str) -> dict:
+async def act_stock_map(date: str) -> dict:
     return (await act_stock_by_date({"date": date})).get(date, {})
 
 
@@ -1107,7 +1109,7 @@ async def needs_grid_cell(body: CellBody, request: Request, user: dict = Depends
     await log_audit(request, user, "UPDATE", "production_needs", str(res["_id"]),
                     {**key, body.field: (existing or {}).get(body.field)}, {**key, body.field: value},
                     f"Input cell {body.field} · {ics} {typ} · {date}")
-    stk = await shift3_stock_map(date)
+    stk = await act_stock_map(date)
     return needs_row(date, it, res, stk, ics, typ)
 
 
@@ -1538,7 +1540,7 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
         k = (r["ics_no"], r["type"])
         if k not in last_row or r["date"] > last_row[k]["date"]:
             last_row[k] = r
-    top_shortage = [{"id": f"{r['date']}|{r['id']}", "date": r["date"], "type": r["type"], "ics_no": r["ics_no"], "product": r.get("product"),
+    top_shortage = [{"id": r["id"], "date": r["date"], "type": r["type"], "ics_no": r["ics_no"], "product": r.get("product"),
                      "lane": r.get("lane"), "ics_name": r.get("ics_name"), "balance": r["balance"], "status_part": r.get("status_part"),
                      "act_stock": r.get("act_stock"), "plan_customer": r.get("plan_customer")}
                     for r in sorted((x for x in last_row.values() if x["balance"] <= 0), key=lambda x: x["balance"])[:10]]

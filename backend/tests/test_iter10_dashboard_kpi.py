@@ -28,6 +28,11 @@ ALL_ICS = list(ICS.values())
 SH = (3, 1, 2)
 
 
+def sday(d, n):
+    from datetime import datetime, timedelta
+    return (datetime.strptime(d, "%Y-%m-%d") + timedelta(days=n)).strftime("%Y-%m-%d")
+
+
 def login(u, p):
     r = requests.post(f"{API}/auth/login", json={"username": u, "password": p})
     assert r.status_code == 200, r.text
@@ -90,12 +95,20 @@ def seed(admin):
     # stock & customer plans for shortage
     stocks = [("S1", D2, "SHIFT 3", 1000), ("S2", D2, "SHIFT 3", 150), ("W1", D2, "SHIFT 3", 1000), ("W2", D2, "SHIFT 3", 10),
               ("L", D1, "SHIFT 3", 0), ("L", D2, "SHIFT 3", 1000), ("N", D2, "SHIFT 3", 500), ("S1", D2, "SHIFT 1", 777),
-              ("A89", D1, "SHIFT 2", 40)]
+              ("A89", D1, "SHIFT 1", 40)]  # iter11: A89 distractor (not SHIFT 2 of D-1 for any graded day)
     for k, d, sh, tot in stocks:
         r = admin.post(f"{API}/smt-stock", json={"date": d, "shift": sh, "lane": "ZT10", "product": PROD, "type": ITEMS[k][0],
                                                  "ics_no": ICS[k], "group1": tot})
         assert r.status_code == 200, r.text
         STOCK_IDS[(k, d, sh)] = r.json()["id"]
+    # iter11: ACT STOCK D = TOTAL SHIFT 2 of D-1 -> mirror each SHIFT 3 seed to SHIFT 2 of previous day
+    for k, d, sh, tot in stocks:
+        if sh == "SHIFT 3":
+            pd_ = sday(d, -1)
+            r = admin.post(f"{API}/smt-stock", json={"date": pd_, "shift": "SHIFT 2", "lane": "ZT10", "product": PROD, "type": ITEMS[k][0],
+                                                     "ics_no": ICS[k], "group1": tot})
+            assert r.status_code == 200, r.text
+            STOCK_IDS[(k, pd_, "SHIFT 2")] = r.json()["id"]
     cell(admin, "S1", D2, "plan_customer", 100)   # bal 900 -> TIDAK
     cell(admin, "S2", D2, "plan_customer", 100)   # bal 50 -> POTENSI
     cell(admin, "W1", D2, "plan_customer", 100)   # bal 900 TIDAK
@@ -126,8 +139,11 @@ def reference(date_from, date_to, product=None):
     ents = {(e["date"], e["ics_no"], e["type"]): e for e in mongo.needs_entries.find(q)}
     stocks = list(mongo.smt_stock.find(q))
     s3 = {}
-    for s in sorted([s for s in stocks if s.get("shift") == "SHIFT 3"], key=lambda x: x.get("updated_at") or ""):
-        s3[(s["date"], s["ics_no"], s["type"])] = num(s.get("total"))
+    qa = {"date": {"$gte": sday(date_from, -1), "$lte": sday(date_to, -1)}, "shift": "SHIFT 2"}
+    for s in sorted(mongo.smt_stock.find(qa), key=lambda x: x.get("updated_at") or ""):
+        if s.get("total") is None:
+            continue
+        s3[(sday(s["date"], 1), s["ics_no"], s["type"])] = num(s.get("total"))
     rows = []
     for key in set(ents) | set(s3):
         d, i, t = key
@@ -267,7 +283,7 @@ class TestShortage:
         assert s["tidak_shortage"] + s["potensi_shortage"] + s["shortage"] <= s["total_part"]
 
     def test_move_to_shortage_via_stock(self, admin):
-        r = admin.patch(f"{API}/smt-stock/{STOCK_IDS[('S1', D2, 'SHIFT 3')]}/cell", json={"field": "group1", "value": 50})
+        r = admin.patch(f"{API}/smt-stock/{STOCK_IDS[('S1', D1, 'SHIFT 2')]}/cell", json={"field": "group1", "value": 50})
         assert r.status_code == 200, r.text
         s = summ(admin)["resume"]["shortage"]
         assert (s["tidak_shortage"], s["potensi_shortage"], s["shortage"]) == (1, 1, 2)
@@ -293,7 +309,7 @@ class TestTopShortage:
             assert f in top[0]
 
     def test_order_change_and_disappear(self, admin):
-        r = admin.patch(f"{API}/smt-stock/{STOCK_IDS[('S1', D2, 'SHIFT 3')]}/cell", json={"field": "group1", "value": 0})
+        r = admin.patch(f"{API}/smt-stock/{STOCK_IDS[('S1', D1, 'SHIFT 2')]}/cell", json={"field": "group1", "value": 0})
         assert r.status_code == 200
         top = summ(admin)["top_shortage"]
         assert [t["ics_no"] for t in top] == [ICS["S1"], ICS["W2"]]

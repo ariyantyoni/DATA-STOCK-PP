@@ -7,6 +7,7 @@ from pymongo import MongoClient
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
 API = f"{BASE_URL}/api"
 DATE = "2030-01-15"
+PREV = "2030-01-14"
 ICS_A, TYPE_A = "9900000081", "ZT ALPHA"
 ICS_B, TYPE_B = "9900000082", "ZT BETA"
 
@@ -42,11 +43,13 @@ def seed(admin):
     assert a.status_code == 200, a.text
     assert b.status_code == 200, b.text
     stk = {}
-    for sh, g1 in (("SHIFT 3", 30), ("SHIFT 1", 1000), ("SHIFT 2", 2000)):
-        r = admin.post(f"{API}/smt-stock", json={"date": DATE, "shift": sh, "lane": "ZT9", "product": "REGULER", "type": TYPE_A,
+    # iter11: ACT STOCK D = TOTAL SHIFT 2 of D-1 (PREV). Others must be ignored.
+    for key, d, sh, g1 in (("ACT", PREV, "SHIFT 2", 30), ("P3", PREV, "SHIFT 3", 1000), ("P1", PREV, "SHIFT 1", 2000),
+                           ("D2", DATE, "SHIFT 2", 3000), ("D3", DATE, "SHIFT 3", 4000)):
+        r = admin.post(f"{API}/smt-stock", json={"date": d, "shift": sh, "lane": "ZT9", "product": "REGULER", "type": TYPE_A,
                                                     "ics_no": ICS_A, "group1": g1, "group2": 5, "part_ragu": 5})
         assert r.status_code == 200, r.text
-        stk[sh] = r.json()["id"]
+        stk[key] = r.json()["id"]
     yield {"a": a.json(), "b": b.json(), "stk": stk}
     # cleanup
     mongo.smt_stock.delete_many({"ics_no": {"$in": [ICS_A, ICS_B]}})
@@ -79,7 +82,7 @@ class TestNeedsGridGet:
                   "status_mesin_s3", "status_mesin_s1", "status_mesin_s2", "balance", "level_stock", "balance_s3",
                   "balance_s1", "balance_s2", "status_part"):
             assert k in x, k
-        assert x["id"] == f"{x['ics_no']}|{x['type']}"
+        assert x["id"] == f"{x['date']}|{x['ics_no']}|{x['type']}"
         assert "_id" not in x
 
     @pytest.mark.parametrize("d", ["2026-13-01", "abc", "15-01-2030"])
@@ -87,17 +90,17 @@ class TestNeedsGridGet:
         assert admin.get(f"{API}/needs-grid", params={"date": d}).status_code == 400
 
 
-# --- ACT STOCK integration (SHIFT 3 only)
+# --- ACT STOCK integration (SHIFT 2 of D-1)
 class TestActStock:
-    def test_act_stock_is_shift3_total(self, admin, seed):
+    def test_act_stock_is_shift2_prev_day_total(self, admin, seed):
         row = grid_row(admin, ICS_A, TYPE_A)
-        assert row["act_stock"] == 40  # 30+5+5, SHIFT 1/2 not added
+        assert row["act_stock"] == 40  # 30+5+5 from SHIFT 2 of D-1; SHIFT 3/1 D-1 and same-day not used
         assert row["level_stock"] == 2.0  # 40/20
         b = grid_row(admin, ICS_B, TYPE_B)
         assert b["act_stock"] is None and b["balance"] is None and b["status_part"] is None
 
     def test_smt_stock_cell_updates_act_stock(self, admin, seed):
-        rid = seed["stk"]["SHIFT 3"]
+        rid = seed["stk"]["ACT"]
         r = admin.patch(f"{API}/smt-stock/{rid}/cell", json={"field": "group1", "value": 50})
         assert r.status_code == 200, r.text
         d = r.json()
@@ -108,11 +111,11 @@ class TestActStock:
 
     @pytest.mark.parametrize("field,value", [("total", 1), ("lane", 1), ("group1", "12a"), ("group1", 1.5), ("group1", -1), ("group1", "-1")])
     def test_smt_stock_cell_validation(self, admin, seed, field, value):
-        r = admin.patch(f"{API}/smt-stock/{seed['stk']['SHIFT 3']}/cell", json={"field": field, "value": value})
+        r = admin.patch(f"{API}/smt-stock/{seed['stk']['ACT']}/cell", json={"field": field, "value": value})
         assert r.status_code == 400, f"{field}={value!r} -> {r.status_code} {r.text}"
 
     def test_smt_stock_cell_null_and_audit(self, admin, seed):
-        rid = seed["stk"]["SHIFT 3"]
+        rid = seed["stk"]["ACT"]
         r = admin.patch(f"{API}/smt-stock/{rid}/cell", json={"field": "part_ragu", "value": ""})
         assert r.status_code == 200 and r.json()["part_ragu"] is None and r.json()["total"] == 35
         admin.patch(f"{API}/smt-stock/{rid}/cell", json={"field": "part_ragu", "value": 5})
@@ -207,7 +210,7 @@ class TestPermission:
     def test_assy_read_ok_write_403(self, assy, seed):
         assert assy.get(f"{API}/needs-grid", params={"date": DATE}).status_code == 200
         assert cell(assy, "plan_customer", 1).status_code == 403
-        assert assy.patch(f"{API}/smt-stock/{seed['stk']['SHIFT 3']}/cell", json={"field": "group1", "value": 1}).status_code == 403
+        assert assy.patch(f"{API}/smt-stock/{seed['stk']['ACT']}/cell", json={"field": "group1", "value": 1}).status_code == 403
 
 
 # --- Regression
