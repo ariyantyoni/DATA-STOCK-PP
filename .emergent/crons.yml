@@ -1,0 +1,9 @@
+crons:
+  - name: daily-stock-generate
+    description: "Generates daily Stock Part Production rows (all Master Items x 3 shifts) at 00:01 WIB"
+    cron: "1 0 * * *"
+    timezone: "Asia/Jakarta"
+    endpoint: "{{BASE_URL}}/api/cron/daily-generate"
+    method: POST
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    enabled: true

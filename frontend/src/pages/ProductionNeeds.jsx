@@ -7,12 +7,17 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ExcelGrid from "@/components/ExcelGrid";
 import NeedsImportDialog from "@/components/NeedsImportDialog";
-import { ClipboardList, Download, RefreshCw, Search, Loader2, Upload } from "lucide-react";
+import { ClipboardList, Download, RefreshCw, Search, Loader2, Upload, Trash2, RotateCcw } from "lucide-react";
+import { useMetaOptions } from "@/hooks/useMetaOptions";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 
 const ALL = "__all__";
 const MESIN = ["ON", "OFF", "DANDORI"];
-const localToday = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+const localToday = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
 
 const STATUS_FILL = {
   SHORTAGE: "!bg-red-600 !text-white font-bold",
@@ -71,7 +76,7 @@ const GROUPS = [
   { label: "SHIFT 2", span: 5, className: "bg-amber-100 dark:bg-amber-500/20" },
 ];
 
-const FILTERS = [["product", "Product"], ["lane", "Lane"], ["proses_mesin", "Proses Mesin"], ["group", "Group"], ["status_part", "Status Part"]];
+const FILTERS = [["product", "Product"], ["lane", "Lane"], ["proses_mesin", "Proses Mesin"], ["status_part", "Status Part"]];
 
 function FSelect({ k, label, value, options, onChange }) {
   return (
@@ -88,24 +93,58 @@ function FSelect({ k, label, value, options, onChange }) {
   );
 }
 
+function DeleteConfirm({ open, count, busy, onCancel, onConfirm }) {
+  return (
+    <AlertDialog open={open} onOpenChange={(v) => { if (!v) onCancel(); }}>
+      <AlertDialogContent className="bg-card border-border" data-testid="needs-delete-dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2"><Trash2 className="w-5 h-5 text-red-600" /> Hapus {fmtNum(count)} data?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Nilai input (PLAN CUSTOMER, ACTUAL CUSTOMER, PLAN/ACTUAL S3/S1/S2, STATUS MESIN) pada <b data-testid="needs-delete-count">{fmtNum(count)}</b> baris terpilih akan dikosongkan.
+            Data item dari Master Item dan stok dari Stock Part Production tidak terpengaruh.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel data-testid="needs-delete-cancel" disabled={busy}>CANCEL</AlertDialogCancel>
+          <AlertDialogAction data-testid="needs-delete-confirm" disabled={busy} onClick={(e) => { e.preventDefault(); onConfirm(); }} className="bg-red-600 hover:bg-red-700 text-white">
+            {busy ? "Menghapus..." : "CONFIRM DELETE"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 export default function ProductionNeeds() {
   const { user } = useAuth();
+  const { options } = useMetaOptions();
   const writable = canWrite(user, "production_needs");
-  const [date, setDate] = useState(localToday());
+  const [range, setRange] = useState({ from: localToday(), to: localToday() });
+  const [group, setGroup] = useState("");
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [f, setF] = useState({});
   const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState(new Set());
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const params = useMemo(() => {
+    const from = range.from || localToday();
+    const to = range.to || from;
+    return { date_from: from <= to ? from : to, date_to: from <= to ? to : from, ...(group ? { group } : {}) };
+  }, [range, group]);
 
   const reqId = useRef(0);
   const load = useCallback(async () => {
-    if (!date) return;
     const my = ++reqId.current;
     setLoading(true);
-    try { const { data } = await api.get("/needs-grid", { params: { date } }); if (my === reqId.current) setRows(data); }
-    catch (e) { if (my === reqId.current) toast.error(formatApiErrorDetail(e.response?.data?.detail)); }
+    try {
+      const { data } = await api.get("/needs-grid", { params });
+      if (my === reqId.current) { setRows(data); setSelected(new Set()); }
+    } catch (e) { if (my === reqId.current) toast.error(formatApiErrorDetail(e.response?.data?.detail)); }
     finally { if (my === reqId.current) setLoading(false); }
-  }, [date]);
+  }, [params]);
   useEffect(() => { load(); }, [load]);
 
   const onSave = useCallback(async (row, field, value) => {
@@ -121,12 +160,27 @@ export default function ProductionNeeds() {
   }, [rows, f, search]);
   const counts = useMemo(() => view.reduce((a, r) => { if (r.status_part) a[r.status_part] = (a[r.status_part] || 0) + 1; return a; }, {}), [view]);
 
+  const resetFilters = () => { setRange({ from: localToday(), to: localToday() }); setGroup(""); setF({}); setSearch(""); };
+
+  const doDelete = async () => {
+    const picked = rows.filter((r) => selected.has(r.id)).map((r) => ({ date: r.date, ics_no: r.ics_no, type: r.type }));
+    setDeleting(true);
+    try {
+      const { data } = await api.post("/needs-grid/clear", { rows: picked });
+      toast.success(`${fmtNum(picked.length)} data berhasil dihapus (${fmtNum(data.cleared)} baris berisi input dikosongkan)`);
+      setConfirmOpen(false);
+      await load();
+    } catch (e) {
+      toast.error(formatApiErrorDetail(e.response?.data?.detail));
+    } finally { setDeleting(false); }
+  };
+
   const [importOpen, setImportOpen] = useState(false);
   const exportXlsx = async () => {
     try {
-      const res = await api.get("/needs-grid/import/template", { params: { date }, responseType: "blob" });
+      const res = await api.get("/needs-grid/import/template", { params, responseType: "blob" });
       const url = URL.createObjectURL(res.data);
-      const a = document.createElement("a"); a.href = url; a.download = `kebutuhan_assy_${date}.xlsx`; a.click(); URL.revokeObjectURL(url);
+      const a = document.createElement("a"); a.href = url; a.download = `kebutuhan_assy_${params.date_from}_${params.date_to}.xlsx`; a.click(); URL.revokeObjectURL(url);
     } catch { toast.error("Gagal export Excel"); }
   };
 
@@ -137,11 +191,15 @@ export default function ProductionNeeds() {
           <div className="w-11 h-11 rounded-lg bg-primary/10 border border-primary/25 flex items-center justify-center"><ClipboardList className="w-5 h-5 text-primary" /></div>
           <div>
             <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight">Kebutuhan Assy VS. Stock Part Production</h1>
-            <p className="text-sm text-muted-foreground mt-0.5 max-w-4xl">BALANCE = (ACT STOCK JAM 01:00 − PLAN CUSTOMER) + ACTUAL S3 + S1 + S2 · ACHIEVEMENT Sx = ACTUAL ÷ PLAN × 100% · LEVEL STOCK = ACT STOCK ÷ STD STOCK MAX · STATUS PART: ≤ 0 SHORTAGE · ≤ MID POTENSI SHORTAGE · &gt; MID TIDAK SHORTAGE (MID = (MIN + MAX) ÷ 2)</p>
+            <p className="text-sm text-muted-foreground mt-0.5 max-w-4xl">ACT STOCK JAM 01:00 = TOTAL STOCK SHIFT 2 tanggal sebelumnya (Stock Part Production) · BALANCE = (ACT STOCK − PLAN CUSTOMER) + ACTUAL S3 + S1 + S2 · ACHIEVEMENT Sx = ACTUAL ÷ PLAN × 100% · LEVEL STOCK = ACT STOCK ÷ STD STOCK MAX · STATUS PART: ≤ 0 SHORTAGE · ≤ MID POTENSI SHORTAGE · &gt; MID TIDAK SHORTAGE (MID = (MIN + MAX) ÷ 2)</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={load} data-testid="needs-reload-button"><RefreshCw className="w-4 h-4 mr-1.5" /> Muat ulang</Button>
+          {writable && (
+            <Button variant="outline" size="sm" disabled={!selected.size} onClick={() => setConfirmOpen(true)} data-testid="needs-delete-selected-button"
+              className="border-red-500/50 text-red-600 hover:bg-red-500/10"><Trash2 className="w-4 h-4 mr-1.5" /> DELETE SELECTED DATA{selected.size ? ` (${fmtNum(selected.size)})` : ""}</Button>
+          )}
           {writable && <Button size="sm" onClick={() => setImportOpen(true)} data-testid="needs-import-button"><Upload className="w-4 h-4 mr-1.5" /> Import Excel</Button>}
           <Button variant="outline" size="sm" onClick={exportXlsx} data-testid="needs-export-button"><Download className="w-4 h-4 mr-1.5" /> Export Excel</Button>
         </div>
@@ -149,8 +207,22 @@ export default function ProductionNeeds() {
 
       <div className="flex flex-wrap items-end gap-3 p-4 rounded-lg border border-border bg-card/60">
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-mono-data uppercase tracking-wider text-muted-foreground">Tanggal Produksi</label>
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9 w-40 bg-secondary/60" data-testid="needs-date-input" />
+          <label className="text-[10px] font-mono-data uppercase tracking-wider text-muted-foreground">Dari Tanggal</label>
+          <Input type="date" value={range.from} onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))} className="h-9 w-40 bg-secondary/60" data-testid="needs-date-from" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-mono-data uppercase tracking-wider text-muted-foreground">Sampai Tanggal</label>
+          <Input type="date" value={range.to} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} className="h-9 w-40 bg-secondary/60" data-testid="needs-date-to" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-mono-data uppercase tracking-wider text-muted-foreground">Group</label>
+          <Select value={group || ALL} onValueChange={(v) => setGroup(v === ALL ? "" : v)}>
+            <SelectTrigger className="h-9 w-40 bg-secondary/60 border-border" data-testid="needs-filter-group"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>ALL GROUP</SelectItem>
+              {(options.master_groups || []).map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
         {FILTERS.map(([k, l]) => <FSelect key={k} k={k} label={l} value={f[k]} options={opts[k] || []} onChange={(kk, v) => setF((p) => ({ ...p, [kk]: v }))} />)}
         <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
@@ -160,21 +232,25 @@ export default function ProductionNeeds() {
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari ICS No., ICS Name, type, lane..." className="h-9 pl-8 bg-secondary/60" data-testid="needs-search-input" />
           </div>
         </div>
+        <Button variant="outline" size="sm" onClick={resetFilters} className="h-9" data-testid="needs-reset-filter"><RotateCcw className="w-4 h-4 mr-1.5" /> RESET FILTER</Button>
       </div>
 
       <div className="flex flex-wrap gap-2 text-xs font-mono-data" data-testid="needs-status-summary">
         {["SHORTAGE", "POTENSI SHORTAGE", "TIDAK SHORTAGE"].map((s) => (
           <span key={s} className={cn("px-3 py-1 rounded", STATUS_FILL[s])} data-testid={`needs-count-${s.replace(/ /g, "-").toLowerCase()}`}>{s}: {counts[s] || 0}</span>
         ))}
+        <span className="px-3 py-1 rounded bg-secondary text-muted-foreground" data-testid="needs-period-label">Periode {params.date_from}{params.date_to !== params.date_from ? ` s/d ${params.date_to}` : ""}{group ? ` · ${group}` : " · ALL GROUP"}</span>
       </div>
 
       {loading ? (
         <div className="py-20 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
       ) : (
         <ExcelGrid testId="needs-grid" columns={COLUMNS} groups={GROUPS} rows={view} rowKey={(r) => r.id} onSave={onSave} editable={writable}
-          info={writable ? "Klik cell putih lalu ketik angka · Enter simpan & turun · Tab simpan & ke kanan · Panah pindah cell · Esc batal · ACT STOCK = TOTAL STOCK HARI INI SHIFT 3" : "Mode lihat saja"} />
+          freezeUntil="proses_mesin" selected={selected} onSelectChange={writable ? setSelected : undefined}
+          info={writable ? "Centang baris untuk hapus · Klik cell putih lalu ketik angka · Enter simpan & turun · Tab ke kanan · Panah pindah · Esc batal" : "Mode lihat saja"} />
       )}
-      <NeedsImportDialog open={importOpen} onOpenChange={setImportOpen} date={date} onDone={load} />
+      <NeedsImportDialog open={importOpen} onOpenChange={setImportOpen} date={params.date_from} onDone={load} />
+      <DeleteConfirm open={confirmOpen} count={selected.size} busy={deleting} onCancel={() => setConfirmOpen(false)} onConfirm={doDelete} />
     </div>
   );
 }

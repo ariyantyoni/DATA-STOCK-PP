@@ -14,6 +14,10 @@ from typing import Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
+from pymongo import UpdateOne
+from zoneinfo import ZoneInfo
+import asyncio
+import hmac
 import logging
 import io
 import re
@@ -303,7 +307,14 @@ def compute_smt_production(d: dict) -> dict:
     return d
 
 
+STOCK_INPUTS = ["group1", "group2", "group3", "group4", "group5", "group6", "part_ragu"]
+
+
 def compute_smt_stock(d: dict) -> dict:
+    if all(d.get(k) is None for k in STOCK_INPUTS):
+        d["total"] = None
+        d["status"] = "KOSONG"
+        return d
     d["total"] = r1(num(d.get("group1")) + num(d.get("group2")) + num(d.get("group3"))
                     + num(d.get("group4")) + num(d.get("group5")) + num(d.get("group6")) + num(d.get("part_ragu")))
     d["status"] = "OK" if d["total"] > 0 else "KOSONG"
@@ -569,7 +580,7 @@ def register_crud(dataset: str):
     async def list_items(date_from: Optional[str] = None, date_to: Optional[str] = None,
                          lane: Optional[str] = None, type: Optional[str] = None, ics_no: Optional[str] = None,
                          product: Optional[str] = None, shift: Optional[str] = None, proses_mesin: Optional[str] = None,
-                         status: Optional[str] = None, search: Optional[str] = None,
+                         status: Optional[str] = None, search: Optional[str] = None, group: Optional[str] = None,
                          user: dict = Depends(require_perm(module, "read"))):
         sh = shift if shift and shift != "ALL" else None
         pr = proses_mesin if proses_mesin and proses_mesin != "ALL" else None
@@ -579,7 +590,7 @@ def register_crud(dataset: str):
         elif module == "variance":
             out = await variance_view(p, product, pr)
         else:
-            docs = await coll.find(build_query(p)).sort(cfg["sort"]).to_list(5000)
+            docs = await coll.find(build_query(p)).sort(cfg["sort"]).to_list(20000 if module == "smt_stock" else 5000)
             out = [clean(d) for d in docs]
             if module == "smt_stock":
                 out = await enrich_stock(out)
@@ -589,6 +600,8 @@ def register_crud(dataset: str):
                 out = [o for o in out if o.get("product") == product]
             if pr:
                 out = [o for o in out if o.get("proses_mesin") == pr]
+            if group and group != "ALL":
+                out = [o for o in out if o.get("group") == group]
         if status:
             out = [o for o in out if o.get("status") == status or o.get("variance_status") == status or o.get("indikator") == status or o.get("status_part") == status]
         return out
@@ -906,18 +919,40 @@ def compute_needs_grid(r: dict) -> dict:
     return r
 
 
+ACT_STOCK_SHIFT = "SHIFT 2"
+
+
+def shift_day(d: str, n: int) -> str:
+    return (datetime.strptime(d, "%Y-%m-%d") + timedelta(days=n)).strftime("%Y-%m-%d")
+
+
+async def act_stock_by_date(q: dict) -> dict:
+    """ACT STOCK JAM 01:00 tanggal D = TOTAL STOCK SHIFT 2 tanggal D-1. q = filter tanggal produksi."""
+    dq = q.get("date")
+    if isinstance(dq, dict) and "$in" in dq:
+        sq = {"date": {"$in": [shift_day(d, -1) for d in dq["$in"]]}}
+    elif isinstance(dq, dict):
+        sq = {"date": {k: shift_day(v, -1) for k, v in dq.items()}}
+    elif isinstance(dq, str):
+        sq = {"date": shift_day(dq, -1)}
+    else:
+        sq = {}
+    out = {}
+    for st in await db.smt_stock.find({**sq, "shift": ACT_STOCK_SHIFT}).sort("updated_at", 1).to_list(200000):
+        if st.get("total") is None or not st.get("date"):
+            continue
+        out.setdefault(shift_day(st["date"], 1), {})[(st.get("ics_no"), st.get("type"))] = num(st.get("total"))
+    return out
+
+
 async def shift3_stock_map(date: str) -> dict:
-    m = {}
-    docs = await db.smt_stock.find({"date": date, "shift": "SHIFT 3"}).sort("updated_at", 1).to_list(20000)
-    for s in docs:
-        m[(s.get("ics_no"), s.get("type"))] = num(s.get("total"))
-    return m
+    return (await act_stock_by_date({"date": date})).get(date, {})
 
 
 def needs_row(date: str, it: Optional[dict], ent: Optional[dict], stk: dict, ics: str, typ: str) -> dict:
     it = it or {}
     ent = ent or {}
-    r = {"id": f"{ics}|{typ}", "date": date, "ics_no": ics, "type": typ, "master_found": bool(it)}
+    r = {"id": f"{date}|{ics}|{typ}", "date": date, "ics_no": ics, "type": typ, "master_found": bool(it)}
     for f in ("lane", "product", "ics_name", "proses_mesin", "group"):
         r[f] = it.get(f) or ""
     r["std_stock_min"] = it.get("std_stock_min")
@@ -933,9 +968,7 @@ def needs_row(date: str, it: Optional[dict], ent: Optional[dict], stk: dict, ics
 async def needs_rows_period(date_from: Optional[str] = None, date_to: Optional[str] = None, dates=None) -> list:
     q = {"date": {"$in": list(dates)}} if dates is not None else build_query({"date_from": date_from, "date_to": date_to})
     ents = {(e.get("date"), e.get("ics_no"), e.get("type")): e for e in await db.needs_entries.find(q).to_list(200000)}
-    stk = {}
-    for st in await db.smt_stock.find({**q, "shift": "SHIFT 3"}).sort("updated_at", 1).to_list(200000):
-        stk.setdefault(st.get("date"), {})[(st.get("ics_no"), st.get("type"))] = num(st.get("total"))
+    stk = await act_stock_by_date(q)
     keys = set(ents) | {(d, i, t) for d, m in stk.items() for (i, t) in m}
     items = {(it.get("ics_no"), it.get("type")): it for it in await db.items.find({}).to_list(20000)}
     return [needs_row(d, items.get((i, t)), ents.get((d, i, t)), stk.get(d, {}), i, t) for (d, i, t) in sorted(keys)]
@@ -949,23 +982,74 @@ def valid_date(date: str) -> str:
     return date
 
 
+MAX_GRID_DAYS = 31
+
+
+def date_list(date_from: str, date_to: str) -> list:
+    d0, d1 = datetime.strptime(valid_date(date_from), "%Y-%m-%d"), datetime.strptime(valid_date(date_to), "%Y-%m-%d")
+    if d1 < d0:
+        raise HTTPException(400, "SAMPAI TANGGAL tidak boleh lebih awal dari DARI TANGGAL")
+    n = (d1 - d0).days + 1
+    if n > MAX_GRID_DAYS:
+        raise HTTPException(400, f"Periode maksimal {MAX_GRID_DAYS} hari")
+    return [(d0 + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(n)]
+
+
 @api.get("/needs-grid")
-async def needs_grid(date: str, user: dict = Depends(require_perm("production_needs", "read"))):
-    valid_date(date)
-    items = await db.items.find({}).sort([("lane", 1), ("type", 1)]).to_list(20000)
-    ents = {(e.get("ics_no"), e.get("type")): e for e in await db.needs_entries.find({"date": date}).to_list(20000)}
-    stk = await shift3_stock_map(date)
-    out, seen = [], set()
+async def needs_grid(date: Optional[str] = None, date_from: Optional[str] = None, date_to: Optional[str] = None,
+                     group: Optional[str] = None, user: dict = Depends(require_perm("production_needs", "read"))):
+    if date and not date_from:
+        date_from = date_to = date
+    if not date_from:
+        date_from = date_to = today_wib()
+    dates = date_list(date_from, date_to or date_from)
+    grp = group if group and group != "ALL" else None
+    iq = {"group": grp} if grp else {}
+    items = await db.items.find(iq).sort([("lane", 1), ("type", 1)]).to_list(20000)
+    ents = {}
+    for e in await db.needs_entries.find({"date": {"$in": dates}}).to_list(200000):
+        ents[(e.get("date"), e.get("ics_no"), e.get("type"))] = e
+    stk = await act_stock_by_date({"date": {"$in": dates}})
+    master_keys = []
+    seen = set()
     for it in items:
         key = (it.get("ics_no") or "", it.get("type") or "")
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(needs_row(date, it, ents.get(key), stk, *key))
-    for key, e in ents.items():
         if key not in seen:
-            out.append(needs_row(date, None, e, stk, *key))
+            seen.add(key)
+            master_keys.append((key, it))
+    all_master = seen if not grp else {(it.get("ics_no"), it.get("type")) for it in await db.items.find({}, {"ics_no": 1, "type": 1}).to_list(20000)}
+    out = []
+    for d in dates:
+        for key, it in master_keys:
+            out.append(needs_row(d, it, ents.get((d, *key)), stk.get(d, {}), *key))
+        if not grp:
+            for (ed, ei, et), e in ents.items():
+                if ed == d and (ei, et) not in all_master:
+                    out.append(needs_row(d, None, e, stk.get(d, {}), ei, et))
     return out
+
+
+class ClearBody(BaseModel):
+    rows: list
+
+
+@api.post("/needs-grid/clear")
+async def needs_grid_clear(body: ClearBody, request: Request, user: dict = Depends(require_perm("production_needs", "write"))):
+    if not body.rows:
+        raise HTTPException(400, "Tidak ada data yang dipilih")
+    if len(body.rows) > 50000:
+        raise HTTPException(400, "Terlalu banyak data dipilih")
+    cleared = 0
+    for r in body.rows:
+        if not isinstance(r, dict):
+            continue
+        key = {"date": str(r.get("date") or ""), "ics_no": str(r.get("ics_no") or ""), "type": str(r.get("type") or "")}
+        doc = await db.needs_entries.find_one_and_delete(key)
+        if doc:
+            cleared += 1
+            await log_audit(request, user, "DELETE", "production_needs", str(doc["_id"]), clean(dict(doc)), None,
+                            f"Hapus (kosongkan) input Kebutuhan · {key['ics_no']} {key['type']} · {key['date']}")
+    return {"selected": len(body.rows), "cleared": cleared}
 
 
 class CellBody(BaseModel):
@@ -1025,6 +1109,113 @@ async def needs_grid_cell(body: CellBody, request: Request, user: dict = Depends
                     f"Input cell {body.field} · {ics} {typ} · {date}")
     stk = await shift3_stock_map(date)
     return needs_row(date, it, res, stk, ics, typ)
+
+
+class BulkIds(BaseModel):
+    ids: list
+
+
+@api.post("/smt-stock/bulk-delete")
+async def smt_stock_bulk_delete(body: BulkIds, request: Request, user: dict = Depends(require_perm("smt_stock", "write"))):
+    ids = [i for i in body.ids if isinstance(i, str)]
+    if not ids:
+        raise HTTPException(400, "Tidak ada data yang dipilih")
+    oids = []
+    for i in ids:
+        try:
+            oids.append(ObjectId(i))
+        except Exception:
+            continue
+    docs = await db.smt_stock.find({"_id": {"$in": oids}}).to_list(len(oids) + 1)
+    res = await db.smt_stock.delete_many({"_id": {"$in": [d["_id"] for d in docs]}})
+    for d in docs:
+        await log_audit(request, user, "DELETE", "smt_stock", str(d["_id"]), clean(dict(d)), None, "Hapus data (checklist)")
+    if res.deleted_count:
+        await notify_users(user, "smt_stock", f"{user['name']} menghapus {res.deleted_count} data Stock Part Production (checklist).")
+    return {"selected": len(ids), "deleted": res.deleted_count}
+
+
+def today_wib() -> str:
+    return datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%Y-%m-%d")
+
+
+async def generate_stock_day(date: str, source: str, by: str, run_id: Optional[str] = None) -> dict:
+    now = datetime.now(timezone.utc).isoformat()
+    log_id = (await db.generate_logs.insert_one({"date": date, "source": source, "by": by, "run_id": run_id, "status": "RUNNING",
+                                                  "started_at": now})).inserted_id
+    try:
+        items = await db.items.find({}).to_list(20000)
+        ops, seen = [], set()
+        for it in items:
+            key = (it.get("ics_no") or "", it.get("type") or "")
+            if not key[0] or key in seen:
+                continue
+            seen.add(key)
+            for sh in ("SHIFT 3", "SHIFT 1", "SHIFT 2"):
+                doc = {"date": date, "ics_no": key[0], "type": key[1], "shift": sh, "lane": it.get("lane") or "",
+                       "product": it.get("product") or "", **{k: None for k in STOCK_INPUTS}, "total": None, "status": "KOSONG",
+                       "generated": True, "created_at": now, "created_by": "system", "created_by_name": f"SYSTEM ({source})",
+                       "updated_at": now, "updated_by": "system", "updated_by_name": f"SYSTEM ({source})"}
+                ops.append(UpdateOne({"date": date, "ics_no": key[0], "type": key[1], "shift": sh}, {"$setOnInsert": doc}, upsert=True))
+        inserted = 0
+        for i in range(0, len(ops), 1000):
+            res = await db.smt_stock.bulk_write(ops[i:i + 1000], ordered=False)
+            inserted += res.upserted_count
+        result = {"status": "SUCCESS", "inserted": inserted, "existing": len(ops) - inserted, "expected": len(ops),
+                  "finished_at": datetime.now(timezone.utc).isoformat()}
+    except Exception as e:
+        logger.exception("Generate stock gagal")
+        result = {"status": "FAILED", "error": str(e), "finished_at": datetime.now(timezone.utc).isoformat()}
+    await db.generate_logs.update_one({"_id": log_id}, {"$set": result})
+    return {"date": date, **result}
+
+
+class GenerateBody(BaseModel):
+    date: Optional[str] = None
+
+
+@api.post("/smt-stock/generate")
+async def smt_stock_generate(body: GenerateBody, request: Request, user: dict = Depends(require_perm("smt_stock", "write"))):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Hanya admin yang dapat menjalankan generate manual")
+    date = valid_date(body.date or today_wib())
+    res = await generate_stock_day(date, "MANUAL", user["name"])
+    await log_audit(request, user, "CREATE", "smt_stock", date, None, res, f"Generate data harian {date} dari Master Item")
+    if res["status"] != "SUCCESS":
+        raise HTTPException(500, f"Generate gagal: {res.get('error')}")
+    return res
+
+
+@api.get("/smt-stock/generate-logs")
+async def smt_stock_generate_logs(user: dict = Depends(require_perm("smt_stock", "read"))):
+    return [clean(d) for d in await db.generate_logs.find({}).sort("started_at", -1).to_list(15)]
+
+
+async def run_cron_generate(run_id: str):
+    await generate_stock_day(today_wib(), "AUTO 00:01 WIB", "SYSTEM", run_id)
+
+
+@api.post("/cron/daily-generate")
+async def cron_daily_generate(request: Request):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    secret = os.environ.get("WEBHOOK_CRON_SECRET") or ""
+    auth = request.headers.get("authorization") or ""
+    token = auth[7:] if auth.lower().startswith("bearer ") else ""
+    if not secret or not token or not hmac.compare_digest(token, secret):
+        raise HTTPException(401, "Unauthorized")
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    if body is not None and not isinstance(body, dict):
+        raise HTTPException(400, "Invalid body")
+    run_id = request.headers.get("x-webhook-id") or (body or {}).get("run_id") or f"manual-{datetime.now(timezone.utc).isoformat()}"
+    try:
+        await db.cron_runs.insert_one({"_id": run_id, "at": datetime.now(timezone.utc).isoformat(), "job": "daily-generate"})
+    except DuplicateKeyError:
+        return {"status": "duplicate", "run_id": run_id}
+    asyncio.create_task(run_cron_generate(run_id))
+    return {"status": "accepted", "run_id": run_id}
 
 
 @api.patch("/smt-stock/{rid}/cell")
@@ -1177,8 +1368,10 @@ def import_counts(rows):
 
 
 @api.get("/needs-grid/import/template")
-async def needs_import_template(date: Optional[str] = None, user: dict = Depends(require_perm("production_needs", "read"))):
-    rows = await needs_grid(valid_date(date), user) if date else []
+async def needs_import_template(date: Optional[str] = None, date_from: Optional[str] = None, date_to: Optional[str] = None,
+                                group: Optional[str] = None, user: dict = Depends(require_perm("production_needs", "read"))):
+    rows = await needs_grid(date, date_from, date_to, group, user) if (date or date_from) else []
+    date = date or (f"{date_from}_{date_to}" if date_from else None)
     wb = Workbook(); ws = wb.active; ws.title = "Kebutuhan Assy"
     ws.append([lab for _, lab in NEEDS_EXPORT_COLS])
     for r in rows:
@@ -1238,6 +1431,7 @@ async def meta_options(user: dict = Depends(get_current_user)):
             "products": sorted({x for x in await db.items.distinct("product") if x} | {x for x in await db.smt_production.distinct("product") if x}),
             "proses_mesin": sorted({x for x in await db.items.distinct("proses_mesin") if x}),
             "groups": [f"GROUP {i}" for i in range(1, 7)],
+            "master_groups": sorted({x for x in await db.items.distinct("group") if x}, key=lambda g: (len(g), g)),
             "shifts": SHIFTS,
             "stock_status": ["OK", "KOSONG"],
             "indikator": ["PASS", "MINUS", "OVER", "BELUM DISET"],
@@ -1355,7 +1549,7 @@ async def dashboard_summary(date_from: Optional[str] = None, date_to: Optional[s
     latest_stock = {}
     for st in stocks:
         k = (st.get("ics_no"), st.get("type"))
-        if k not in item_group:
+        if k not in item_group or st.get("total") is None:
             continue
         o = (st.get("date") or "", shift_ord.get(st.get("shift"), -1))
         if k not in latest_stock or o > latest_stock[k][0]:
@@ -1848,6 +2042,11 @@ async def startup():
     await db.audit_log.create_index([("ts", -1)])
     await db.needs_entries.create_index([("date", 1), ("ics_no", 1), ("type", 1)], unique=True)
     await db.smt_stock.create_index([("date", 1), ("shift", 1)])
+    await db.generate_logs.create_index([("started_at", -1)])
+    try:
+        await db.smt_stock.create_index([("date", 1), ("ics_no", 1), ("type", 1), ("shift", 1)], unique=True, name="uniq_stock_key")
+    except Exception as e:
+        logger.warning(f"Index unik smt_stock tidak dibuat (ada data ganda lama): {e}")
     await db.notifications.create_index([("user_id", 1), ("read", 1), ("ts", -1)])
     await seed_admin()
     await seed_demo_users()

@@ -24,10 +24,12 @@ function FSelect({ label, value, onChange, options, testId, allLabel = "Semua" }
   );
 }
 
-export default function FilterBar({ filters, values, setValues, options }) {
+export default function FilterBar({ filters, values, setValues, options, defaults }) {
   const set = (k, v) => setValues((p) => ({ ...p, [k]: v }));
-  const reset = () => setValues({});
-  const hasActive = Object.values(values).some((v) => v);
+  const reset = () => setValues(defaults || {});
+  const hasActive = defaults
+    ? Object.keys({ ...values, ...defaults }).some((k) => (values[k] || "") !== (defaults[k] || ""))
+    : Object.values(values).some((v) => v);
 
   return (
     <div className="flex flex-wrap items-end gap-3 p-4 rounded-lg border border-border bg-card/60">
@@ -45,6 +47,7 @@ export default function FilterBar({ filters, values, setValues, options }) {
           </div>
         </>
       )}
+      {filters.includes("group") && <FSelect label="Group" value={values.group} onChange={(v) => set("group", v)} options={options.master_groups || []} testId="filter-group" allLabel="ALL GROUP" />}
       {filters.includes("product") && <FSelect label="Product" value={values.product} onChange={(v) => set("product", v)} options={options.products || []} testId="filter-product" allLabel="ALL PRODUCT" />}
       {filters.includes("lane") && <FSelect label="Lane / Line" value={values.lane} onChange={(v) => set("lane", v)} options={options.lanes || []} testId="filter-lane" />}
       {filters.includes("lamp_line") && <FSelect label="Line" value={values.lane} onChange={(v) => set("lane", v)} options={options.lamp_lines || []} testId="filter-lamp-line" />}
@@ -69,7 +72,7 @@ export default function FilterBar({ filters, values, setValues, options }) {
       </div>
       {hasActive && (
         <Button variant="ghost" size="sm" onClick={reset} className="h-9 text-muted-foreground" data-testid="filter-reset">
-          <X className="w-4 h-4 mr-1" /> Reset
+          <X className="w-4 h-4 mr-1" /> {defaults ? "RESET FILTER" : "Reset"}
         </Button>
       )}
     </div>

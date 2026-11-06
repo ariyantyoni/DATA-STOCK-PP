@@ -18,12 +18,16 @@ import { cn } from "@/lib/utils";
 export default function CrudPage({
   title, subtitle, icon: Icon, endpoint, dataset, module,
   columns, formFields, filters, options, refreshOptions, itemPicker = true, readOnly = false, hideAudit = false, note, inlineEdit = false,
+  initialValues, bulkDelete = false, freezeUntil, headerExtra, reloadSignal = 0,
 }) {
   const { user } = useAuth();
   const writable = !readOnly && canWrite(user, module);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [values, setValues] = useState({});
+  const [values, setValues] = useState(initialValues || {});
+  const [selected, setSelected] = useState(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -45,12 +49,13 @@ export default function CrudPage({
       Object.entries(values).forEach(([k, v]) => { if (v) params[k] = v; });
       const { data } = await api.get(endpoint, { params });
       setRows(data);
+      setSelected(new Set());
     } catch (e) {
       toast.error(formatApiErrorDetail(e.response?.data?.detail));
     } finally {
       setLoading(false);
     }
-  }, [endpoint, values]);
+  }, [endpoint, values, reloadSignal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const t = setTimeout(fetchData, 250);
@@ -152,6 +157,13 @@ export default function CrudPage({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {headerExtra}
+          {writable && bulkDelete && (
+            <Button variant="outline" size="sm" disabled={!selected.size} onClick={() => setBulkOpen(true)} data-testid="delete-selected-button"
+              className="border-red-500/50 text-red-600 hover:bg-red-500/10">
+              <Trash2 className="w-4 h-4 mr-1.5" /> DELETE SELECTED DATA{selected.size ? ` (${fmtNum(selected.size)})` : ""}
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={exportCsv} data-testid="export-csv-button" className="border-border">
             <Download className="w-4 h-4 mr-1.5" /> Export
           </Button>
@@ -168,12 +180,13 @@ export default function CrudPage({
         </div>
       </div>
 
-      <FilterBar filters={filters} values={values} setValues={setValues} options={options} />
+      <FilterBar filters={filters} values={values} setValues={setValues} options={options} defaults={initialValues} />
 
       {inlineEdit && (loading ? (
         <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
       ) : (
         <ExcelGrid testId="inline-grid" columns={gridColumns} rows={rows} rowKey={(r) => r.id} onSave={onCellSave} editable={writable}
+          freezeUntil={freezeUntil} selected={selected} onSelectChange={writable && bulkDelete ? setSelected : undefined}
           renderActions={writable ? renderActions : undefined}
           info={writable ? `Kolom hijau dapat diisi langsung · Enter simpan & turun · Tab simpan & ke kanan · Panah pindah · Esc batal${note ? ` · ${note}` : ""}` : note} />
       ))}
@@ -261,6 +274,34 @@ export default function CrudPage({
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="delete-cancel">Batal</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDelete} data-testid="delete-confirm" className="bg-red-500 hover:bg-red-600">Hapus</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={bulkOpen} onOpenChange={(v) => { if (!bulkBusy) setBulkOpen(v); }}>
+        <AlertDialogContent className="bg-card border-border" data-testid="bulk-delete-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2"><Trash2 className="w-5 h-5 text-red-600" /> Hapus {fmtNum(selected.size)} data?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <b data-testid="bulk-delete-count">{fmtNum(selected.size)}</b> data terpilih akan dihapus permanen dan dicatat di Audit Trail. Data yang tidak dicentang tidak terpengaruh.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="bulk-delete-cancel" disabled={bulkBusy}>CANCEL</AlertDialogCancel>
+            <AlertDialogAction data-testid="bulk-delete-confirm" disabled={bulkBusy} className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={async (e) => {
+                e.preventDefault();
+                setBulkBusy(true);
+                try {
+                  const { data } = await api.post(`${endpoint}/bulk-delete`, { ids: [...selected] });
+                  toast.success(`${fmtNum(data.deleted)} data berhasil dihapus`);
+                  setBulkOpen(false);
+                  fetchData();
+                } catch (err) {
+                  toast.error(formatApiErrorDetail(err.response?.data?.detail));
+                } finally { setBulkBusy(false); }
+              }}>
+              {bulkBusy ? "Menghapus..." : "CONFIRM DELETE"}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
