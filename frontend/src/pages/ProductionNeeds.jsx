@@ -246,7 +246,7 @@ export default function ProductionNeeds() {
         <div className="py-20 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
       ) : (
         <ExcelGrid testId="needs-grid" columns={COLUMNS} groups={GROUPS} rows={view} rowKey={(r) => r.id} onSave={onSave} editable={writable}
-          freezeUntil="proses_mesin" selected={selected} onSelectChange={writable ? setSelected : undefined}
+          selected={selected} onSelectChange={writable ? setSelected : undefined}
           info={writable ? "Centang baris untuk hapus · Klik cell putih lalu ketik angka · Enter simpan & turun · Tab ke kanan · Panah pindah · Esc batal" : "Mode lihat saja"} />
       )}
       <NeedsImportDialog open={importOpen} onOpenChange={setImportOpen} date={params.date_from} onDone={load} />

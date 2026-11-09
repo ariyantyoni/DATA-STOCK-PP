@@ -64,7 +64,7 @@ export default function SMTStock() {
       icon={Boxes} endpoint="/smt-stock" inlineEdit dataset="smt-stock" module="smt_stock"
       columns={columns} formFields={formFields} note="Pilih item dari Master Item untuk mengisi Lane/Product/Type/ICS otomatis"
       filters={["date", "group", "shift", "proses_mesin", "product", "lane", "type", "ics_no", "status_part"]} options={options} refreshOptions={refresh}
-      initialValues={initialValues} bulkDelete freezeUntil="proses_mesin" reloadSignal={reload}
+      initialValues={initialValues} bulkDelete reloadSignal={reload}
       headerExtra={isAdmin && (
         <Button variant="outline" size="sm" onClick={() => setGenOpen(true)} data-testid="generate-open-button" className="border-border">
           <CalendarPlus className="w-4 h-4 mr-1.5" /> Generate Harian
